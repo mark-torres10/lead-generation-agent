@@ -1,0 +1,16 @@
+[project]
+name = "Lead Generation AI Agent Demo"
+version = "0.1.0"
+description = "AI Agent Demo – Smart Lead Engagement & CRM Enrichment"
+authors = ["Mark Torres <markptorres1@gmail.com>"]
+requires-python = ">=3.12"
+readme = "README.md"
+
+[tool.setuptools]
+packages = ["crm", "agent", "simulator"]
+
+[project.dependencies]
+langchain = ">=0.0.300"
+openai = ">=0.27.0"
+pyyaml = ">=6.0"
+streamlit = ">=1.20.0" 
