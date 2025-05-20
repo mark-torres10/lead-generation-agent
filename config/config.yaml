@@ -1,0 +1,10 @@
+crm:
+  data_path: "crm/mock_crm.json"
+agent:
+  model: "openai-mock"
+  memory_type: "buffer"
+simulator:
+  turns: 5
+logging:
+  level: "INFO"
+  output_dir: "logs/" 

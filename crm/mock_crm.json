@@ -1,0 +1,35 @@
+[
+  {
+    "id": "lead_001",
+    "name": "Alice",
+    "email": "alice@acme.com",
+    "company": "Acme Corp",
+    "interests": "dashboards, marketing automation",
+    "status": "new",
+    "interaction_history": [],
+    "inferred_priority": null,
+    "recommended_action": null
+  },
+  {
+    "id": "lead_002",
+    "name": "Bob",
+    "email": "bob@globex.com",
+    "company": "Globex Inc",
+    "interests": "sales automation, analytics",
+    "status": "new",
+    "interaction_history": [],
+    "inferred_priority": null,
+    "recommended_action": null
+  },
+  {
+    "id": "lead_003",
+    "name": "Carol",
+    "email": "carol@initech.com",
+    "company": "Initech",
+    "interests": "workflow, integration",
+    "status": "new",
+    "interaction_history": [],
+    "inferred_priority": null,
+    "recommended_action": null
+  }
+] 
