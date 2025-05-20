@@ -23,4 +23,4 @@ This project demonstrates an AI agent that automates lead follow-ups, simulates 
 - `config/` – Configuration files
 
 ## Usage
-TBD – See main.py (to be implemented)
+To run any Python file in the repo, you can, beyond just normal `python <file>` usage, use the `run.sh` file. This sets the `PYTHONPATH` to be based on the current repo. For example, to run `python -m crm.load_data` with that script, you can run `./run.sh python -m crm.load_data`.
