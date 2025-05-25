@@ -24,10 +24,53 @@ class SQLiteMemoryStore:
                     lead_score INTEGER NOT NULL,
                     reasoning TEXT NOT NULL,
                     next_action TEXT NOT NULL,
+                    lead_disposition TEXT,
+                    disposition_confidence INTEGER,
+                    sentiment TEXT,
+                    urgency TEXT,
+                    last_reply_analysis TEXT,
+                    recommended_follow_up TEXT,
+                    follow_up_timing TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Add new columns to existing table if they don't exist
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN lead_disposition TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN disposition_confidence INTEGER")
+            except sqlite3.OperationalError:
+                pass
+                
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN sentiment TEXT")
+            except sqlite3.OperationalError:
+                pass
+                
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN urgency TEXT")
+            except sqlite3.OperationalError:
+                pass
+                
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN last_reply_analysis TEXT")
+            except sqlite3.OperationalError:
+                pass
+                
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN recommended_follow_up TEXT")
+            except sqlite3.OperationalError:
+                pass
+                
+            try:
+                conn.execute("ALTER TABLE qualification_memory ADD COLUMN follow_up_timing TEXT")
+            except sqlite3.OperationalError:
+                pass
             
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS interaction_history (
@@ -56,18 +99,36 @@ class SQLiteMemoryStore:
     def save_qualification(self, lead_id: str, qualification_data: Dict[str, Any]) -> None:
         """Save qualification results for a lead."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO qualification_memory 
-                (lead_id, priority, lead_score, reasoning, next_action, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
+            # Build dynamic SQL based on available fields
+            base_fields = ["lead_id", "priority", "lead_score", "reasoning", "next_action", "updated_at"]
+            base_values = [
                 lead_id,
                 qualification_data["priority"],
                 qualification_data["lead_score"],
                 qualification_data["reasoning"],
                 qualification_data["next_action"],
                 datetime.now().isoformat()
-            ))
+            ]
+            
+            # Add optional fields if they exist in the data
+            optional_fields = [
+                "lead_disposition", "disposition_confidence", "sentiment", "urgency",
+                "last_reply_analysis", "recommended_follow_up", "follow_up_timing"
+            ]
+            
+            for field in optional_fields:
+                if field in qualification_data:
+                    base_fields.append(field)
+                    base_values.append(qualification_data[field])
+            
+            placeholders = ", ".join(["?"] * len(base_fields))
+            fields_str = ", ".join(base_fields)
+            
+            conn.execute(f"""
+                INSERT OR REPLACE INTO qualification_memory 
+                ({fields_str})
+                VALUES ({placeholders})
+            """, base_values)
             conn.commit()
     
     def get_qualification(self, lead_id: str) -> Optional[Dict[str, Any]]:
@@ -75,21 +136,17 @@ class SQLiteMemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""
-                SELECT priority, lead_score, reasoning, next_action, created_at, updated_at
-                FROM qualification_memory 
-                WHERE lead_id = ?
+                SELECT * FROM qualification_memory WHERE lead_id = ?
             """, (lead_id,))
             
             row = cursor.fetchone()
             if row:
-                return {
-                    "priority": row["priority"],
-                    "lead_score": row["lead_score"],
-                    "reasoning": row["reasoning"],
-                    "next_action": row["next_action"],
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"]
-                }
+                # Convert row to dict, excluding None values for cleaner output
+                result = {}
+                for key in row.keys():
+                    if key != "lead_id" and row[key] is not None:
+                        result[key] = row[key]
+                return result
             return None
     
     def has_qualification(self, lead_id: str) -> bool:

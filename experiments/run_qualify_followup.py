@@ -62,8 +62,8 @@ def get_llm_chain():
     """Create and return the LLM chain for lead qualification."""
     # Initialize OpenAI LLM
     llm = ChatOpenAI(
-        model="gpt-3.5-turbo",
-        temperature=0.3,
+        model="gpt-4o-mini",
+        temperature=0.0,
         openai_api_key=os.getenv("OPENAI_API_KEY")
     )
     
