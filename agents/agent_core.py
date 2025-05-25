@@ -4,13 +4,14 @@ This module provides shared functionality for all agents including LLM initializ
 prompt template management, and response parsing utilities.
 """
 
-import os
 import re
-from typing import Dict, List, Any
+
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAI
 
+from lib.constants import default_model, default_temperature, default_max_tokens
+from lib.env_vars import OPENAI_API_KEY
 
 class AgentCore:
     """Core infrastructure for agent LLM operations.
@@ -18,8 +19,8 @@ class AgentCore:
     Provides shared functionality for LLM chain creation, configuration,
     and response parsing that can be used by all specialized agents.
     """
-    
-    def __init__(self, llm_config: Dict[str, Any]):
+
+    def __init__(self, llm_config: dict):
         """Initialize the AgentCore with LLM configuration.
         
         Args:
@@ -33,16 +34,16 @@ class AgentCore:
         self.llm = None
         self._configure_llm_from_config(llm_config)
     
-    def create_llm_chain(self, prompt_template: str, input_variables: List[str]) -> LLMChain:
+    def create_llm_chain(self, prompt_template: str, input_variables: list[str]) -> LLMChain:
         """Create an LLM chain with the given prompt template.
-        
+
         Args:
             prompt_template: The prompt template string with placeholders
             input_variables: List of variable names used in the template
-            
+
         Returns:
             LLMChain: Configured LangChain LLM chain ready for execution
-            
+
         Raises:
             ValueError: If prompt_template or input_variables are invalid
             RuntimeError: If LLM initialization fails
@@ -64,10 +65,10 @@ class AgentCore:
             return LLMChain(llm=self.llm, prompt=prompt)
         except Exception as e:
             raise RuntimeError(f"Failed to create LLM chain: {str(e)}")
-    
-    def parse_structured_response(self, response: str, expected_fields: Dict[str, Any]) -> Dict[str, Any]:
+
+    def parse_structured_response(self, response: str, expected_fields: dict) -> dict:
         """Parse structured LLM response into a dictionary.
-        
+
         Extracts key-value pairs from LLM response text and validates against
         expected fields with type conversion and default values.
         
@@ -125,7 +126,7 @@ class AgentCore:
             for key, default_value in expected_fields.items():
                 if key not in result:
                     result[key] = default_value
-            
+
             return result
             
         except ValueError:
@@ -168,7 +169,7 @@ class AgentCore:
         except Exception as e:
             raise RuntimeError(f"Failed to configure LLM: {str(e)}")
     
-    def validate_response_format(self, response: str, required_patterns: List[str]) -> bool:
+    def validate_response_format(self, response: str, required_patterns: list[str]) -> bool:
         """Validate that response contains required patterns.
         
         Args:
@@ -191,13 +192,13 @@ class AgentCore:
             return True
         except Exception:
             return False
-    
-    def _configure_llm_from_config(self, config: Dict[str, Any]) -> None:
+
+    def _configure_llm_from_config(self, config: dict) -> None:
         """Internal method to configure LLM from config dictionary."""
-        model = config.get("model", "gpt-4o-mini")
-        temperature = config.get("temperature", 0.0)
-        max_tokens = config.get("max_tokens", 500)
-        api_key = config.get("api_key") or os.getenv("OPENAI_API_KEY")
+        model = config.get("model", default_model)
+        temperature = config.get("temperature", default_temperature)
+        max_tokens = config.get("max_tokens", default_max_tokens)
+        api_key = config.get("api_key") or OPENAI_API_KEY
         
         # Choose LLM class based on model
         if model.startswith("gpt-4") or model.startswith("gpt-3.5"):
