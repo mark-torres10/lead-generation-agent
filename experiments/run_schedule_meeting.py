@@ -1,19 +1,23 @@
 """
-Meeting scheduling experiment using LangChain and OpenAI.
+Meeting scheduling experiment using the MeetingScheduler agent.
 """
 import os
 import sys
 from datetime import datetime, timedelta
 import json
 import time
+from typing import Dict, Any
 
 # Add the parent directory to the path so we can import from memory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotenv import load_dotenv
 from memory.memory_manager import memory_manager
-from langchain_openai import OpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from agents.agent_core import AgentCore
+from agents.meeting_scheduler import MeetingScheduler
+
+# Load environment variables
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 # Mock meeting request data
 mock_meeting_requests = {
@@ -99,72 +103,21 @@ mock_calendar_slots = {
     "2025-05-30": ["09:00", "11:00", "14:00", "15:00"]
 }
 
-def get_llm_chain_for_meeting_scheduling():
-    """Initialize the LLM and create a chain for meeting analysis."""
-    llm = OpenAI(temperature=0.3, max_tokens=800)
-    
-    prompt_template = PromptTemplate(
-        input_variables=["lead_info", "meeting_request", "meeting_history", "available_slots"],
-        template="""
-You are a meeting scheduling assistant. Analyze the meeting request and determine the best approach.
-
-Lead Information:
-{lead_info}
-
-Meeting Request:
-{meeting_request}
-
-Previous Meeting History:
-{meeting_history}
-
-Available Calendar Slots:
-{available_slots}
-
-Please analyze this request and provide your response in the following format:
-Meeting Intent: [schedule_new/reschedule/decline/unclear]
-Meeting Type: [demo/consultation/pricing_discussion/follow_up/other]
-Urgency: [immediate/high/medium/low/none]
-Preferred Time: [specific time if mentioned or 'flexible']
-Duration: [30min/60min/90min/custom]
-Analysis: [Your analysis of the request]
-Recommended Response: [What response to send to the lead]
-Booking Action: [book_immediately/propose_times/request_clarification/decline_politely]
-Suggested Datetime: [YYYY-MM-DD HH:MM format if booking, or 'none']
-"""
-    )
-    
-    return LLMChain(llm=llm, prompt=prompt_template)
-
-def parse_meeting_analysis_response(response_text):
-    """Parse the LLM response for meeting analysis."""
-    lines = response_text.strip().split('\n')
-    result = {}
-    
-    for line in lines:
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip().lower().replace(' ', '_').replace('-', '_')
-            value = value.strip()
-            result[key] = value
-    
-    # Ensure all required fields are present with defaults
-    defaults = {
-        'meeting_intent': 'schedule_new',
-        'meeting_type': 'consultation', 
-        'urgency': 'medium',
-        'preferred_time': 'flexible',
-        'duration': '60min',
-        'analysis': 'Standard meeting request',
-        'recommended_response': 'I\'ll schedule a meeting for you.',
-        'booking_action': 'propose_times',
-        'suggested_datetime': 'none'
+def create_meeting_scheduler():
+    """Create and return the MeetingScheduler agent."""
+    # LLM configuration
+    llm_config = {
+        "model": "gpt-4o-mini",
+        "temperature": 0.3,
+        "max_tokens": 800,
+        "api_key": os.getenv("OPENAI_API_KEY")
     }
     
-    for key, default_value in defaults.items():
-        if key not in result:
-            result[key] = default_value
+    # Create agent core
+    agent_core = AgentCore(llm_config)
     
-    return result
+    # Create and return MeetingScheduler
+    return MeetingScheduler(agent_core, memory_manager)
 
 def build_context_from_meeting_request(request_data, memory_mgr=None):
     """Build context for LLM from meeting request data."""
@@ -202,45 +155,68 @@ def build_context_from_meeting_request(request_data, memory_mgr=None):
     return context
 
 def analyze_meeting_request(context):
-    """Analyze a meeting request using LLM."""
+    """Analyze a meeting request using MeetingScheduler agent."""
     print(f"\n=== Analyzing Meeting Request ===")
     
-    # Get LLM chain and analyze
-    chain = get_llm_chain_for_meeting_scheduling()
+    # Get MeetingScheduler agent
+    meeting_scheduler = create_meeting_scheduler()
     
-    response = chain.run(**context)
+    # Prepare request data for the agent
+    request_data = {
+        "request_text": context.get("meeting_request", ""),
+        "sender_email": "unknown@example.com",  # Would be extracted from context in real scenario
+        "preferred_times": context.get("available_slots", ""),
+        "lead_id": "unknown"  # Would be extracted from context
+    }
     
-    print(f"LLM Analysis Response:\n{response}")
+    # Prepare lead context for the agent
+    lead_context = {
+        "lead_info": context.get("lead_info", ""),
+        "meeting_history": context.get("meeting_history", "No previous meetings")
+    }
     
-    # Parse the response
-    analysis_result = parse_meeting_analysis_response(response)
-    
-    print(f"\nParsed Analysis:")
-    for key, value in analysis_result.items():
-        print(f"  {key}: {value}")
-    
-    return analysis_result
+    try:
+        # Run analysis using the agent
+        analysis_result = meeting_scheduler.analyze_request(request_data, lead_context)
+        
+        print(f"\nAgent Analysis Result:")
+        for key, value in analysis_result.items():
+            print(f"  {key}: {value}")
+        
+        return analysis_result
+        
+    except Exception as e:
+        print(f"❌ Error during meeting analysis: {str(e)}")
+        # Return default analysis on error
+        return {
+            "intent": "schedule_meeting",
+            "urgency": "medium",
+            "preferred_duration": 60,
+            "time_preferences": "flexible",
+            "meeting_type": "consultation",
+            "flexibility": "high",
+            "next_action": "propose_times"
+        }
 
 def generate_meeting_response(analysis_result):
     """Generate appropriate response based on analysis."""
-    intent = analysis_result.get("meeting_intent", "schedule_new")
-    booking_action = analysis_result.get("booking_action", "propose_times")
+    intent = analysis_result.get("intent", "schedule_meeting")
+    next_action = analysis_result.get("next_action", "propose_times")
     
-    if intent == "decline":
+    if intent == "cancel":
         return "Thank you for your message. I understand you're not interested in scheduling a meeting at this time. Please feel free to reach out if your needs change."
     
-    elif booking_action == "book_immediately":
-        suggested_time = analysis_result.get("suggested_datetime", "TBD")
-        return f"Perfect! I've scheduled our meeting for {suggested_time}. You'll receive a calendar invitation shortly."
+    elif next_action == "book_immediately":
+        return "Perfect! I'll schedule our meeting and send you a calendar invitation shortly."
     
-    elif booking_action == "propose_times":
+    elif next_action == "propose_times":
         return "Thank you for your interest in scheduling a meeting. I have several time slots available this week. Would any of these work for you: Monday 2pm, Tuesday 10am, or Wednesday 3pm?"
     
-    elif booking_action == "request_clarification":
+    elif next_action == "request_clarification":
         return "Thank you for reaching out. To better assist you, could you please let me know your preferred time and what specific topics you'd like to discuss?"
     
     else:
-        return analysis_result.get("recommended_response", "Thank you for your message. I'll get back to you shortly about scheduling.")
+        return "Thank you for your message. I'll get back to you shortly about scheduling."
 
 def check_calendar_availability(date_time_str):
     """Check if a specific date/time is available in the mock calendar."""
@@ -304,36 +280,55 @@ def book_meeting(lead_id, meeting_datetime, meeting_type="consultation", duratio
     
     return calendar_event_id
 
-def update_crm_with_meeting_info(lead_id, analysis_result):
-    """Update CRM with meeting analysis results."""
-    # Update lead qualification with meeting info
+def update_crm_with_meeting_info(lead_id: str, analysis_result: Dict[str, Any]) -> None:
+    """Update CRM with meeting information from analysis result."""
+    
+    # Create meeting data from analysis result
     meeting_data = {
-        "meeting_status": "requested",
-        "meeting_type": analysis_result.get("meeting_type"),
-        "meeting_urgency": analysis_result.get("urgency"),
-        "meeting_duration": analysis_result.get("duration"),
-        "meeting_analysis": analysis_result.get("analysis"),
-        "meeting_preferred_time": analysis_result.get("preferred_time"),
-        "requested": True
+        "meeting_type": analysis_result.get("meeting_type", "consultation"),
+        "urgency": analysis_result.get("urgency", "medium"),
+        "preferred_duration": analysis_result.get("preferred_duration", 30),
+        "next_action": analysis_result.get("next_action", "follow_up"),
+        "time_preferences": str(analysis_result.get("time_preferences", [])),
+        "status": "confirmed" if analysis_result.get("intent") == "schedule_meeting" else "pending"
     }
     
-    if analysis_result.get("suggested_datetime") != "none":
-        meeting_data["meeting_datetime"] = analysis_result.get("suggested_datetime")
+    # Check if lead has existing qualification
+    existing_qualification = memory_manager.get_qualification(lead_id)
     
-    memory_manager.update_qualification_with_meeting_info(lead_id, meeting_data)
+    if existing_qualification:
+        # Update existing qualification with meeting info
+        memory_manager.save_meeting(lead_id, meeting_data)
+        # Update qualification with meeting flags only
+        qualification_update = {
+            "meeting_scheduled": True,
+            "meeting_status": meeting_data.get("status", "scheduled")
+        }
+        # Merge with existing qualification to preserve required fields
+        qualification_update.update(existing_qualification)
+        memory_manager.save_qualification(lead_id, qualification_update)
+    else:
+        # Create a basic qualification with required fields if none exists
+        basic_qualification = {
+            "priority": "medium",
+            "lead_score": 70,
+            "reasoning": f"Meeting request analysis: {analysis_result.get('intent', 'unknown')}",
+            "next_action": analysis_result.get("next_action", "follow_up"),
+            "lead_disposition": "interested",
+            "disposition_confidence": 80,
+            "sentiment": "positive",
+            "urgency": analysis_result.get("urgency", "medium"),
+            "meeting_scheduled": True,
+            "meeting_status": meeting_data.get("status", "scheduled")
+        }
+        memory_manager.save_qualification(lead_id, basic_qualification)
+        memory_manager.save_meeting(lead_id, meeting_data)
     
     # Update mock CRM
     if lead_id in mock_crm_data:
-        mock_crm_data[lead_id]["meeting_status"] = analysis_result.get("meeting_intent", "requested")
-        mock_crm_data[lead_id]["last_interaction"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Log interaction in memory
-    interaction_data = {
-        "analysis_result": analysis_result,
-        "timestamp": datetime.now().isoformat()
-    }
-    
-    memory_manager.add_interaction(lead_id, "meeting_request_analyzed", interaction_data)
+        mock_crm_data[lead_id]["meeting_status"] = meeting_data.get("status")
+        mock_crm_data[lead_id]["last_interaction"] = datetime.now().isoformat()
+        mock_crm_data[lead_id]["notes"] = f"Meeting analysis: {analysis_result.get('intent', 'unknown')}"
 
 def handle_meeting_request(request_id):
     """
@@ -347,18 +342,19 @@ def handle_meeting_request(request_id):
     # Build context from the meeting request
     context = build_context_from_meeting_request(request_data, memory_manager)
     
-    # Analyze the meeting request using LLM
+    # Analyze the meeting request using MeetingScheduler agent
     analysis_result = analyze_meeting_request(context)
     
     # Generate appropriate response
     response = generate_meeting_response(analysis_result)
     
     # Try to book the meeting if needed
-    if analysis_result.get("booking_action") == "book_meeting":
-        meeting_time = analysis_result.get("proposed_time")
-        if meeting_time and check_calendar_availability(meeting_time):
-            book_meeting(request_data["lead_id"], meeting_time)
-            response += f"\n\nMeeting booked for {meeting_time}"
+    if analysis_result.get("next_action") == "book_immediately":
+        # For demo purposes, book at a default time
+        default_time = "2025-05-27 10:00"
+        if check_calendar_availability(default_time):
+            book_meeting(request_data["lead_id"], default_time)
+            response += f"\n\nMeeting booked for {default_time}"
         else:
             response += "\n\nUnable to book meeting at requested time."
     

@@ -25,6 +25,7 @@
 - **Mock External Dependencies**: Never hit real databases/APIs in unit tests
 - **Integration Tests**: Test critical paths end-to-end with real components
 - **Property-Based Testing**: Use for complex business logic validation
+- **Testing against expected results**: Write the expected output and save it to a "expected_result" variable. Then have your assertions, where relevant, test directly against the "expected_result" to see if the content is correct. This helps with improving readability of tests.
 
 ## Code Style & Readability
 

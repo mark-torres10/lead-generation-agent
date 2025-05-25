@@ -1,15 +1,13 @@
 import os
 import sys
-import re
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
 from memory.memory_manager import memory_manager
+from agents.agent_core import AgentCore
+from agents.reply_analyzer import ReplyAnalyzer
 
 # Load environment variables from project root
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -79,109 +77,21 @@ mock_crm = {
     }
 }
 
-def get_llm_chain_for_reply_analysis():
-    """Create and return the LLM chain for reply intent analysis."""
-    # Initialize OpenAI LLM
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.0,
-        openai_api_key=os.getenv("OPENAI_API_KEY")
-    )
+def create_reply_analyzer():
+    """Create and return the ReplyAnalyzer agent."""
+    # LLM configuration
+    llm_config = {
+        "model": "gpt-4o-mini",
+        "temperature": 0.0,
+        "max_tokens": 1000,
+        "api_key": os.getenv("OPENAI_API_KEY")
+    }
     
-    # Create prompt template for reply analysis
-    prompt_template = """
-You are an expert sales communication analyst. Analyze the following email reply from a lead to determine their true intent and interest level.
-
-Lead Information:
-- Name: {name}
-- Company: {company}
-- Email: {email}
-- Previous Interest: {interest}
-
-Email Reply:
-- Subject: {reply_subject}
-- Content: {reply_text}
-- Timestamp: {timestamp}
-
-Previous Qualification Context:
-{previous_context}
-
-Please analyze this reply and provide your assessment in the following format:
-DISPOSITION: [engaged/maybe/disinterested]
-CONFIDENCE: [0-100]
-SENTIMENT: [positive/neutral/negative]
-URGENCY: [high/medium/low]
-REASONING: [Your detailed analysis of the reply]
-NEXT_ACTION: [Specific recommended next step]
-FOLLOW_UP_TIMING: [immediate/1-week/1-month/3-months/none]
-
-Consider these factors:
-- Explicit interest statements vs polite brush-offs
-- Urgency indicators (deadlines, budget cycles)
-- Decision-making authority signals
-- Specific questions or requests for information
-- Timeline mentions and availability
-- Tone and language used
-"""
-
-    prompt = PromptTemplate(
-        input_variables=["name", "company", "email", "interest", "reply_subject", "reply_text", "timestamp", "previous_context"],
-        template=prompt_template
-    )
+    # Create agent core
+    agent_core = AgentCore(llm_config)
     
-    return LLMChain(llm=llm, prompt=prompt)
-
-def parse_reply_analysis_response(llm_response):
-    """Parse the LLM response into structured reply analysis data."""
-    try:
-        # Extract disposition
-        disposition_match = re.search(r'DISPOSITION:\s*(\w+)', llm_response, re.IGNORECASE)
-        disposition = disposition_match.group(1).lower() if disposition_match else "maybe"
-        
-        # Extract confidence
-        confidence_match = re.search(r'CONFIDENCE:\s*(\d+)', llm_response)
-        confidence = int(confidence_match.group(1)) if confidence_match else 70
-        
-        # Extract sentiment
-        sentiment_match = re.search(r'SENTIMENT:\s*(\w+)', llm_response, re.IGNORECASE)
-        sentiment = sentiment_match.group(1).lower() if sentiment_match else "neutral"
-        
-        # Extract urgency
-        urgency_match = re.search(r'URGENCY:\s*(\w+)', llm_response, re.IGNORECASE)
-        urgency = urgency_match.group(1).lower() if urgency_match else "medium"
-        
-        # Extract reasoning
-        reasoning_match = re.search(r'REASONING:\s*(.+?)(?=NEXT_ACTION:|$)', llm_response, re.DOTALL | re.IGNORECASE)
-        reasoning = reasoning_match.group(1).strip() if reasoning_match else "Unable to parse reasoning from LLM response"
-        
-        # Extract next action
-        action_match = re.search(r'NEXT_ACTION:\s*(.+?)(?=FOLLOW_UP_TIMING:|$)', llm_response, re.DOTALL | re.IGNORECASE)
-        next_action = action_match.group(1).strip() if action_match else "Follow up via email"
-        
-        # Extract follow-up timing
-        timing_match = re.search(r'FOLLOW_UP_TIMING:\s*(\S+)', llm_response, re.IGNORECASE)
-        follow_up_timing = timing_match.group(1).lower() if timing_match else "1-week"
-        
-        return {
-            "disposition": disposition,
-            "confidence": confidence,
-            "sentiment": sentiment,
-            "urgency": urgency,
-            "reasoning": reasoning,
-            "next_action": next_action,
-            "follow_up_timing": follow_up_timing
-        }
-    except Exception as e:
-        # Fallback values if parsing fails
-        return {
-            "disposition": "maybe",
-            "confidence": 50,
-            "sentiment": "neutral", 
-            "urgency": "medium",
-            "reasoning": f"Unable to parse LLM response: {str(e)}",
-            "next_action": "Follow up via email",
-            "follow_up_timing": "1-week"
-        }
+    # Create and return ReplyAnalyzer
+    return ReplyAnalyzer(agent_core, memory_manager)
 
 def build_context_from_reply(lead_id, reply_data):
     """Build context for reply analysis including lead history."""
@@ -219,31 +129,44 @@ Previous Qualification:
     return context
 
 def analyze_reply_intent(context):
-    """Analyze reply intent using LLM and return structured results."""
+    """Analyze reply intent using ReplyAnalyzer agent and return structured results."""
     print(f"🤖 Analyzing reply intent for {context['name']} from {context['company']}")
     
-    # Get LLM chain
-    chain = get_llm_chain_for_reply_analysis()
+    # Get ReplyAnalyzer
+    reply_analyzer = create_reply_analyzer()
+    
+    # Prepare reply data for the agent
+    reply_data = {
+        "reply_text": context.get("reply_text", ""),
+        "reply_subject": context.get("reply_subject", ""),
+        "sender_email": context.get("email", ""),
+        "timestamp": context.get("timestamp", ""),
+        "lead_id": context.get("lead_id", "")
+    }
+    
+    # Prepare lead context for the agent
+    lead_context = {
+        "name": context.get("name", ""),
+        "company": context.get("company", ""),
+        "previous_interest": context.get("interest", ""),
+        "interaction_history": context.get("previous_context", "No previous interactions")
+    }
     
     # Run analysis
     try:
-        response = chain.invoke(context)
-        llm_response = response["text"]
+        analysis_result = reply_analyzer.analyze(reply_data, lead_context)
         
-        print(f"📝 LLM Analysis Response:\n{llm_response}")
+        # Calculate lead score and priority using the agent's methods
+        lead_score = reply_analyzer.calculate_score(analysis_result)
+        priority = reply_analyzer.determine_priority(analysis_result)
         
-        # Parse the response
-        analysis_result = parse_reply_analysis_response(llm_response)
+        # Add calculated values to the result
+        analysis_result["lead_score"] = lead_score
+        analysis_result["priority"] = priority
         
-        print(f"✅ Parsed Analysis:")
+        print(f"✅ Analysis Result:")
         for key, value in analysis_result.items():
             print(f"   {key}: {value}")
-        
-        # Calculate lead score based on disposition and confidence
-        lead_score = calculate_lead_score_from_reply(analysis_result)
-        
-        # Determine priority based on disposition and urgency
-        priority = determine_priority_from_analysis(analysis_result)
         
         # Update qualification in memory with reply analysis
         lead_id = context.get("lead_id")
@@ -276,14 +199,10 @@ def analyze_reply_intent(context):
             
             memory_manager.save_qualification(lead_id, qualification_update)
         
-        # Add lead_score to analysis result for UI display
-        analysis_result["lead_score"] = lead_score
-        analysis_result["priority"] = priority
-        
         return analysis_result
         
     except Exception as e:
-        print(f"❌ Error during LLM analysis: {str(e)}")
+        print(f"❌ Error during reply analysis: {str(e)}")
         # Return default analysis on error
         return {
             "disposition": "maybe",
@@ -296,57 +215,6 @@ def analyze_reply_intent(context):
             "lead_score": 50,
             "priority": "medium"
         }
-
-def calculate_lead_score_from_reply(analysis_result):
-    """Calculate lead score based on reply analysis results."""
-    base_score = analysis_result.get("confidence", 50)
-    disposition = analysis_result.get("disposition", "maybe")
-    sentiment = analysis_result.get("sentiment", "neutral")
-    urgency = analysis_result.get("urgency", "medium")
-    
-    # Adjust score based on disposition
-    if disposition == "engaged":
-        score_multiplier = 1.0
-    elif disposition == "maybe":
-        score_multiplier = 0.8
-    else:  # disinterested
-        score_multiplier = 0.4
-    
-    # Adjust for sentiment
-    sentiment_bonus = 0
-    if sentiment == "positive":
-        sentiment_bonus = 10
-    elif sentiment == "negative":
-        sentiment_bonus = -15
-    
-    # Adjust for urgency
-    urgency_bonus = 0
-    if urgency == "high":
-        urgency_bonus = 5
-    elif urgency == "low":
-        urgency_bonus = -5
-    
-    final_score = int((base_score * score_multiplier) + sentiment_bonus + urgency_bonus)
-    
-    # Ensure score is within valid range
-    return max(0, min(100, final_score))
-
-def determine_priority_from_analysis(analysis_result):
-    """Determine lead priority based on analysis results."""
-    disposition = analysis_result.get("disposition", "maybe")
-    confidence = analysis_result.get("confidence", 50)
-    urgency = analysis_result.get("urgency", "medium")
-    
-    # High priority: engaged disposition with high confidence or high urgency
-    if disposition == "engaged" and (confidence >= 80 or urgency == "high"):
-        return "high"
-    
-    # Low priority: disinterested or very low confidence
-    if disposition == "disinterested" or confidence < 30:
-        return "low"
-    
-    # Medium priority: everything else
-    return "medium"
 
 def update_crm_with_disposition(lead_id, analysis_result):
     """Update CRM and memory with reply analysis results."""

@@ -1,177 +1,145 @@
 """
-Lead qualification experiment using LangChain and OpenAI.
+Lead qualification experiment using the new EmailQualifier agent.
 """
 import os
 import sys
 from datetime import datetime
+from typing import Dict, Any
 
-# Add the parent directory to the path so we can import from memory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the parent directory to the path so we can import from memory and agents
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 from memory.memory_manager import memory_manager
-from langchain_openai import OpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from agents.agent_core import AgentCore
+from agents.email_qualifier import EmailQualifier
+from lib.env_vars import OPENAI_API_KEY
 
-def get_llm_chain():
-    """Initialize the LLM and create a chain for lead qualification."""
-    llm = OpenAI(temperature=0.7, max_tokens=500)
-    
-    prompt_template = PromptTemplate(
-        input_variables=["lead_name", "lead_company", "lead_email", "lead_message", "previous_qualification"],
-        template="""
-You are a lead qualification expert. Analyze the following lead information and provide a qualification assessment.
-
-Lead Information:
-- Name: {lead_name}
-- Company: {lead_company}
-- Email: {lead_email}
-- Message: {lead_message}
-
-Previous Qualification (if any): {previous_qualification}
-
-Please provide your assessment in the following format:
-Priority: [high/medium/low]
-Lead Score: [0-100]
-Reasoning: [Your reasoning for the score and priority]
-Next Action: [Recommended next action]
-Lead Disposition: [hot/warm/cold/unqualified]
-Disposition Confidence: [0-100]
-Sentiment: [positive/neutral/negative]
-Urgency: [immediate/soon/later/none]
-Last Reply Analysis: [Analysis of their last message]
-Recommended Follow-up: [Specific follow-up recommendation]
-Follow-up Timing: [immediate/within_24h/within_week/later]
-"""
-    )
-    
-    return LLMChain(llm=llm, prompt=prompt_template)
-
-def parse_llm_response(response_text):
-    """Parse the LLM response into structured data."""
-    lines = response_text.strip().split('\n')
-    result = {}
-    
-    for line in lines:
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip().lower().replace(' ', '_').replace('-', '_')
-            value = value.strip()
-            
-            # Convert specific fields to appropriate types
-            if key in ['lead_score', 'disposition_confidence']:
-                try:
-                    result[key] = int(value)
-                except ValueError:
-                    result[key] = 0
-            else:
-                result[key] = value
-    
-    # Ensure all required fields are present with defaults
-    defaults = {
-        'priority': 'medium',
-        'lead_score': 50,
-        'reasoning': 'No specific reasoning provided',
-        'next_action': 'Follow up',
-        'lead_disposition': 'warm',
-        'disposition_confidence': 50,
-        'sentiment': 'neutral',
-        'urgency': 'later',
-        'last_reply_analysis': 'No analysis provided',
-        'recommended_follow_up': 'Standard follow-up',
-        'follow_up_timing': 'within_week'
+def create_email_qualifier() -> EmailQualifier:
+    """Initialize the EmailQualifier agent."""
+    # Create LLM config for AgentCore
+    llm_config = {
+        "model": "gpt-4o-mini",
+        "temperature": 0.7,
+        "max_tokens": 500,
+        "api_key": OPENAI_API_KEY
     }
-    
-    for key, default_value in defaults.items():
-        if key not in result:
-            result[key] = default_value
-    
-    return result
+    agent_core = AgentCore(llm_config=llm_config)
+    return EmailQualifier(agent_core=agent_core, memory_manager=memory_manager)
 
-def qualify_lead(lead_id, lead_data):
-    """Qualify a lead using the LLM and save results to memory."""
+def qualify_lead(lead_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Qualify a lead using the EmailQualifier agent and save results to memory."""
     print(f"\n=== Qualifying Lead: {lead_id} ===")
     
     # Check if we have previous qualification
     previous_qualification = memory_manager.get_qualification(lead_id)
-    previous_qual_text = "None" if not previous_qualification else str(previous_qualification)
+    if previous_qualification:
+        print(f"Previous qualification found: {previous_qualification}")
     
-    # Get LLM chain and run qualification
-    chain = get_llm_chain()
-    
-    response = chain.run(
-        lead_name=lead_data.get('name', 'Unknown'),
-        lead_company=lead_data.get('company', 'Unknown'),
-        lead_email=lead_data.get('email', 'Unknown'),
-        lead_message=lead_data.get('message', 'No message provided'),
-        previous_qualification=previous_qual_text
-    )
-    
-    print(f"LLM Response:\n{response}")
-    
-    # Parse the response
-    qualification_result = parse_llm_response(response)
-    
-    print(f"\nParsed Qualification:")
-    for key, value in qualification_result.items():
-        print(f"  {key}: {value}")
-    
-    # Save to memory
-    memory_manager.save_qualification(lead_id, qualification_result)
-    
-    # Also save lead info if not exists
-    memory_manager.save_lead(lead_id, lead_data)
-    
-    print(f"\nQualification saved to memory for lead: {lead_id}")
-    
-    return qualification_result
+    try:
+        # Create qualifier and run qualification
+        qualifier = create_email_qualifier()
+        
+        # Fix the lead data to match EmailQualifier expectations
+        # EmailQualifier expects 'interest' or 'email_body' instead of 'message'
+        if 'message' in lead_data and 'interest' not in lead_data:
+            lead_data['interest'] = lead_data['message']
+        
+        print(f"Lead data being processed: {lead_data}")
+        
+        qualification_result = qualifier.qualify(lead_data)
+        
+        print(f"Qualification Result:")
+        for key, value in qualification_result.items():
+            print(f"  {key}: {value}")
+        
+        # Save to memory
+        memory_manager.save_qualification(lead_id, qualification_result)
+        
+        # Also save lead info if not exists
+        memory_manager.save_lead(lead_id, lead_data)
+        
+        print(f"\nQualification saved to memory for lead: {lead_id}")
+        
+        return qualification_result
+        
+    except Exception as e:
+        print(f"Error qualifying lead {lead_id}: {str(e)}")
+        # Return a default qualification on error
+        default_qualification = {
+            'priority': 'medium',
+            'lead_score': 50,
+            'reasoning': f'Error during qualification: {str(e)}',
+            'next_action': 'Manual review required',
+            'lead_disposition': 'unqualified',
+            'disposition_confidence': 0,
+            'sentiment': 'neutral',
+            'urgency': 'later'
+        }
+        memory_manager.save_qualification(lead_id, default_qualification)
+        return default_qualification
 
 def demo_qualification():
     """Demo the qualification system with sample leads."""
     
-    # Sample leads
+    # Sample leads with enhanced data structure
     leads = {
         "lead_001": {
             "name": "John Smith",
             "company": "TechCorp Inc",
             "email": "john.smith@techcorp.com",
-            "message": "Hi, I'm interested in your enterprise software solution. We're a 500-person company looking to streamline our operations. Can we schedule a demo this week?"
+            "message": "Hi, I'm interested in your enterprise software solution. We're a 500-person company looking to streamline our operations. Can we schedule a demo this week?",
+            "company_size": "500",
+            "industry": "Technology",
+            "lead_source": "website"
         },
         "lead_002": {
             "name": "Sarah Johnson", 
             "company": "StartupXYZ",
             "email": "sarah@startupxyz.com",
-            "message": "Just browsing your website. Might be interested in the future."
+            "message": "Just browsing your website. Might be interested in the future.",
+            "company_size": "10",
+            "industry": "Startup",
+            "lead_source": "organic"
         },
         "lead_003": {
             "name": "Mike Chen",
             "company": "Global Enterprises",
             "email": "m.chen@globalent.com", 
-            "message": "We need a solution ASAP. Our current system is failing and we have a board meeting next week. Budget is not an issue."
+            "message": "We need a solution ASAP. Our current system is failing and we have a board meeting next week. Budget is not an issue.",
+            "company_size": "1000+",
+            "industry": "Enterprise",
+            "lead_source": "referral"
         }
     }
     
     print("Starting Lead Qualification Demo")
     print("=" * 50)
+    print("Using EmailQualifier Agent")
+    print("=" * 50)
     
     # Qualify each lead
+    results = {}
     for lead_id, lead_data in leads.items():
-        qualify_lead(lead_id, lead_data)
+        results[lead_id] = qualify_lead(lead_id, lead_data)
     
     print("\n" + "=" * 50)
     print("QUALIFICATION SUMMARY")
     print("=" * 50)
     
-    # Show all qualifications
-    for lead_id in leads.keys():
-        qualification = memory_manager.get_qualification(lead_id)
+    # Show all qualifications with enhanced display
+    for lead_id, lead_data in leads.items():
+        qualification = results.get(lead_id)
         if qualification:
-            print(f"\nLead: {lead_id}")
-            print(f"  Priority: {qualification.get('priority')}")
-            print(f"  Score: {qualification.get('lead_score')}")
-            print(f"  Disposition: {qualification.get('lead_disposition')}")
-            print(f"  Next Action: {qualification.get('next_action')}")
-            print(f"  Urgency: {qualification.get('urgency')}")
+            print(f"\nLead: {lead_id} - {lead_data['name']} ({lead_data['company']})")
+            print(f"  Priority: {qualification.get('priority', 'N/A')}")
+            print(f"  Score: {qualification.get('lead_score', 'N/A')}")
+            print(f"  Disposition: {qualification.get('lead_disposition', 'N/A')}")
+            print(f"  Confidence: {qualification.get('disposition_confidence', 'N/A')}%")
+            print(f"  Sentiment: {qualification.get('sentiment', 'N/A')}")
+            print(f"  Urgency: {qualification.get('urgency', 'N/A')}")
+            print(f"  Next Action: {qualification.get('next_action', 'N/A')}")
+            print(f"  Reasoning: {qualification.get('reasoning', 'N/A')[:100]}...")
     
     # Show memory contents
     print("\n" + "=" * 50)
@@ -182,6 +150,18 @@ def demo_qualification():
     print(f"\nTotal leads in memory: {len(all_leads)}")
     for lead in all_leads:
         print(f"  {lead['lead_id']}: {lead['name']} ({lead['company']})")
+    
+    # Show agent performance summary
+    print("\n" + "=" * 50)
+    print("AGENT PERFORMANCE SUMMARY")
+    print("=" * 50)
+    
+    high_priority = sum(1 for r in results.values() if r.get('priority') == 'high')
+    avg_score = sum(r.get('lead_score', 0) for r in results.values()) / len(results)
+    
+    print(f"High Priority Leads: {high_priority}/{len(results)}")
+    print(f"Average Lead Score: {avg_score:.1f}")
+    print(f"Successful Qualifications: {len([r for r in results.values() if r.get('lead_score', 0) > 0])}/{len(results)}")
 
 if __name__ == "__main__":
     demo_qualification() 

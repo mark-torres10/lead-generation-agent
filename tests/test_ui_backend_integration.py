@@ -7,11 +7,6 @@ import unittest
 import tempfile
 import os
 from unittest.mock import patch, Mock
-import sys
-import json
-
-# Add the project root to the path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from memory.memory_manager import MemoryManager
 from memory.memory_store import SQLiteMemoryStore
@@ -48,21 +43,21 @@ class TestUIBackendIntegration(unittest.TestCase):
         
         # Import and run the qualification workflow
         from experiments.run_qualification import qualify_lead
+        from agents.agent_core import AgentCore
         
-        # Mock the LLM response to avoid external API calls
-        with patch('experiments.run_qualification.get_llm_chain') as mock_chain, \
+        # Mock the LLM chain response to avoid external API calls
+        with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_create_chain, \
              patch('experiments.run_qualification.memory_manager', self.memory_manager):
-            mock_llm = Mock()
-            mock_llm.run.return_value = """
-            Priority: high
-            Lead Score: 85
-            Reasoning: VP-level contact from established company showing clear interest in automation solutions
-            Next Action: Send follow-up email with solution overview
-            Lead Disposition: engaged
-            Sentiment: positive
-            Urgency: medium
+            mock_chain = Mock()
+            mock_chain.run.return_value = """
+Priority: high
+Lead Score: 85
+Reasoning: VP-level contact from established company showing clear interest in automation solutions
+Next Action: Send follow-up email with solution overview
+Disposition: hot
+Confidence: 90
             """
-            mock_chain.return_value = mock_llm
+            mock_create_chain.return_value = mock_chain
             
             # Run the qualification
             result = qualify_lead("ui_test_001", form_data)
@@ -97,20 +92,23 @@ class TestUIBackendIntegration(unittest.TestCase):
         }
         
         from experiments.run_reply_intent import analyze_reply_intent, build_context_from_reply
+        from agents.agent_core import AgentCore
         
-        with patch('experiments.run_reply_intent.get_llm_chain_for_reply_analysis') as mock_chain, \
+        with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_create_chain, \
              patch('experiments.run_reply_intent.memory_manager', self.memory_manager):
-            mock_llm = Mock()
-            mock_llm.run.return_value = """
-            DISPOSITION: engaged
-            SENTIMENT: positive
-            URGENCY: high
-            CONFIDENCE: 95
-            REASONING: Lead shows strong buying signals with budget approval and timeline
-            RECOMMENDED_FOLLOW_UP: Schedule discovery call within 2 days
-            FOLLOW_UP_TIMING: immediate
+            mock_chain = Mock()
+            mock_chain.run.return_value = """
+            {
+                "disposition": "engaged",
+                "sentiment": "positive",
+                "urgency": "high",
+                "confidence": 95,
+                "reasoning": "Lead shows strong buying signals with budget approval and timeline",
+                "recommended_follow_up": "Schedule discovery call within 2 days",
+                "follow_up_timing": "immediate"
+            }
             """
-            mock_chain.return_value = mock_llm
+            mock_create_chain.return_value = mock_chain
             
             # Build context and run the reply analysis
             context = build_context_from_reply(lead_id, {"reply_content": reply_data["reply_message"]})
@@ -311,8 +309,8 @@ Sales Team""",
     def test_error_handling_in_workflows(self):
         """Test error handling when workflows encounter issues."""
         # Test qualification with invalid data
-        with patch('experiments.run_qualification.get_llm_chain') as mock_llm:
-            mock_llm.side_effect = Exception("LLM service unavailable")
+        with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_create_chain:
+            mock_create_chain.side_effect = Exception("LLM service unavailable")
             
             from experiments.run_qualification import qualify_lead
             
