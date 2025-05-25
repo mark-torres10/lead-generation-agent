@@ -1,0 +1,2 @@
+"""Email tooling."""
+pass
