@@ -1,2 +1,0 @@
-"""Triage leads."""
-pass

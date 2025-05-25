@@ -167,7 +167,7 @@ def process_qualification_demo(lead_id: str, form_data: Dict[str, Any]) -> Dict[
     memory_manager = get_memory_manager()
     
     # Import the qualification function
-    from experiments.run_qualification import qualify_lead
+    from workflows.run_qualification import qualify_lead
     
     # Mock the LLM response for demo purposes
     mock_response = f"""
@@ -181,8 +181,8 @@ def process_qualification_demo(lead_id: str, form_data: Dict[str, Any]) -> Dict[
     """
     
     # Patch the LLM chain to return our mock response
-    with patch('experiments.run_qualification.get_llm_chain') as mock_chain, \
-         patch('experiments.run_qualification.memory_manager', memory_manager):
+    with patch('workflows.run_qualification.get_llm_chain') as mock_chain, \
+         patch('workflows.run_qualification.memory_manager', memory_manager):
         
         mock_llm = Mock()
         mock_llm.run.return_value = mock_response

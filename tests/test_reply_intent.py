@@ -3,7 +3,7 @@ import sys
 import unittest
 from unittest.mock import patch, MagicMock
 
-from experiments.run_reply_intent import (
+from workflows.run_reply_intent import (
     build_context_from_reply,
     handle_reply,
     mock_replies,

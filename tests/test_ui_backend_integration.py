@@ -42,12 +42,12 @@ class TestUIBackendIntegration(unittest.TestCase):
         }
         
         # Import and run the qualification workflow
-        from experiments.run_qualification import qualify_lead
+        from workflows.run_qualification import qualify_lead
         from agents.agent_core import AgentCore
         
         # Mock the LLM chain response to avoid external API calls
         with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_create_chain, \
-             patch('experiments.run_qualification.memory_manager', self.memory_manager):
+             patch('workflows.run_qualification.memory_manager', self.memory_manager):
             mock_chain = Mock()
             mock_chain.run.return_value = """
 Priority: high
@@ -91,11 +91,11 @@ Confidence: 90
             "reply_message": "Yes, I'm definitely interested! We have budget approved and need to make a decision by end of month. Can we schedule a call this week?"
         }
         
-        from experiments.run_reply_intent import analyze_reply_intent, build_context_from_reply
+        from workflows.run_reply_intent import analyze_reply_intent, build_context_from_reply
         from agents.agent_core import AgentCore
         
         with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_create_chain, \
-             patch('experiments.run_reply_intent.memory_manager', self.memory_manager):
+             patch('workflows.run_reply_intent.memory_manager', self.memory_manager):
             mock_chain = Mock()
             mock_chain.run.return_value = """
             {
@@ -147,10 +147,10 @@ Confidence: 90
             "preferred_times": ["2024-01-15 10:00", "2024-01-15 14:00", "2024-01-16 09:00"]
         }
         
-        from experiments.run_schedule_meeting import book_meeting, check_calendar_availability
+        from workflows.run_schedule_meeting import book_meeting, check_calendar_availability
         
-        with patch('experiments.run_schedule_meeting.check_calendar_availability') as mock_calendar, \
-             patch('experiments.run_schedule_meeting.memory_manager', self.memory_manager):
+        with patch('workflows.run_schedule_meeting.check_calendar_availability') as mock_calendar, \
+             patch('workflows.run_schedule_meeting.memory_manager', self.memory_manager):
             mock_calendar.return_value = {
                 "available_slots": [
                     {"datetime": "2024-01-15 10:00", "available": True},
@@ -312,7 +312,7 @@ Sales Team""",
         with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_create_chain:
             mock_create_chain.side_effect = Exception("LLM service unavailable")
             
-            from experiments.run_qualification import qualify_lead
+            from workflows.run_qualification import qualify_lead
             
             # Should handle errors gracefully
             try:

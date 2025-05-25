@@ -8,9 +8,7 @@ This script demonstrates the MeetingScheduler agent's ability to:
 4. Handle various scheduling scenarios (immediate, flexible, specific times)
 """
 
-import os
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import time
 from typing import Dict, Any
 
@@ -142,8 +140,8 @@ def build_context_from_meeting_request(request_data, memory_mgr=None):
     # Get available calendar slots
     available_slots = []
     for date, times in mock_calendar_slots.items():
-        for time in times:
-            available_slots.append(f"{date} {time}")
+        for available_time in times:
+            available_slots.append(f"{date} {available_time}")
     
     context = {
         "lead_info": f"Name: {lead_info.get('name', 'Unknown')}, Company: {lead_info.get('company', 'Unknown')}, Status: {lead_info.get('status', 'unknown')}",
@@ -156,7 +154,7 @@ def build_context_from_meeting_request(request_data, memory_mgr=None):
 
 def analyze_meeting_request(context):
     """Analyze a meeting request using MeetingScheduler agent."""
-    print(f"\n=== Analyzing Meeting Request ===")
+    print("\n=== Analyzing Meeting Request ===")
     
     # Get MeetingScheduler agent
     meeting_scheduler = create_meeting_scheduler()
@@ -179,7 +177,7 @@ def analyze_meeting_request(context):
         # Run analysis using the agent
         analysis_result = meeting_scheduler.analyze_request(request_data, lead_context)
         
-        print(f"\nAgent Analysis Result:")
+        print("\nAgent Analysis Result:")
         for key, value in analysis_result.items():
             print(f"  {key}: {value}")
         
@@ -230,7 +228,8 @@ def check_calendar_availability(date_time_str):
                 return True
         
         return False
-    except:
+    except Exception as e:
+        print(f"❌ Error checking calendar availability: {str(e)}")
         return False
 
 def book_meeting(lead_id, meeting_datetime, meeting_type="consultation", duration="60min"):

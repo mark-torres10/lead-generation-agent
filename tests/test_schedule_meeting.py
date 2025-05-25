@@ -1,29 +1,30 @@
 """
-Unit tests for meeting scheduling functionality.
+Test suite for meeting scheduling functionality.
+
+This module tests the MeetingScheduler agent's ability to:
+1. Parse meeting requests from email content
+2. Extract scheduling preferences and constraints  
+3. Generate appropriate meeting responses
+4. Handle various scheduling scenarios
 """
+
 import unittest
 import os
-import sys
 import tempfile
-from datetime import datetime
 from unittest.mock import patch, MagicMock
-
-# Add the parent directory to the path so we can import from memory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from memory.memory_store import SQLiteMemoryStore
 from memory.memory_manager import MemoryManager
-from agents.meeting_scheduler import MeetingScheduler
+from memory.memory_store import SQLiteMemoryStore
 from agents.agent_core import AgentCore
-
-# Import functions from the meeting scheduling experiment
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'experiments'))
-from run_schedule_meeting import (
+from agents.meeting_scheduler import MeetingScheduler
+from experiments.run_schedule_meeting import (
+    create_meeting_scheduler,
+    analyze_meeting_request,
+    handle_meeting_request,
+    mock_meeting_requests,
     build_context_from_meeting_request,
     check_calendar_availability,
     book_meeting,
     generate_meeting_response,
-    mock_meeting_requests,
     mock_calendar_slots
 )
 
@@ -32,7 +33,18 @@ class TestMeetingSchedulingAnalysis(unittest.TestCase):
     
     def setUp(self):
         """Set up test environment with temporary database."""
-        # Reset mock calendar slots to ensure clean state for each test
+        # Reset mock meeting requests to match the structure in run_schedule_meeting.py
+        mock_meeting_requests.clear()
+        mock_meeting_requests.update({
+            "meeting_001": {
+                "lead_id": "lead_001",
+                "request_id": "meeting_001",
+                "message": "Can we schedule a demo for tomorrow morning? I'm available between 9-11 AM.",
+                "timestamp": "2025-05-25 15:30:00",
+                "urgency": "high"
+            }
+        })
+        # Reset mock calendar slots to default state
         mock_calendar_slots.clear()
         mock_calendar_slots.update({
             "2025-05-26": ["09:00", "10:00", "14:00", "15:00", "16:00"],
@@ -113,10 +125,14 @@ Next Action: Confirm the demo for either 9:00 AM or 10:00 AM
         agent_core = AgentCore(llm_config=llm_config)
         meeting_scheduler = MeetingScheduler(agent_core, self.memory_manager)
 
+        # Build request_data with all required fields
+        req = mock_meeting_requests["meeting_001"]
         request_data = {
-            "request_text": "I'd like to schedule a demo for tomorrow morning",
+            "request_text": req["message"],
             "sender_email": "test@example.com",
-            "lead_id": "lead_001"
+            "preferred_times": "2025-05-26 09:00,2025-05-26 10:00",
+            "meeting_type": "demo",
+            "lead_id": req["lead_id"]
         }
 
         lead_context = {
@@ -171,7 +187,7 @@ Next Action: Confirm the demo for either 9:00 AM or 10:00 AM
     
     def test_check_calendar_availability_valid_time(self):
         """Test checking calendar availability for a valid time slot."""
-        # This should be available in mock_calendar_slots
+        # This should be available in mock_meeting_requests
         result = check_calendar_availability("2025-05-26 09:00")
         self.assertTrue(result)
     
@@ -183,10 +199,8 @@ Next Action: Confirm the demo for either 9:00 AM or 10:00 AM
     def test_book_meeting_success(self):
         """Test successful meeting booking."""
         event_id = book_meeting("lead_001", "2025-05-26 09:00", "demo", "60min")
-        
         self.assertIsNotNone(event_id)
         self.assertIn("evt_lead_001", event_id)
-        
         # Check that the slot was removed from available slots
         self.assertNotIn("09:00", mock_calendar_slots["2025-05-26"])
     

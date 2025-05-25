@@ -1,4 +1,3 @@
-import os
 from memory.memory_manager import memory_manager
 from agents.agent_core import AgentCore
 from agents.reply_analyzer import ReplyAnalyzer
@@ -156,7 +155,7 @@ def analyze_reply_intent(context):
         analysis_result["lead_score"] = lead_score
         analysis_result["priority"] = priority
         
-        print(f"✅ Analysis Result:")
+        print("✅ Analysis Result:")
         for key, value in analysis_result.items():
             print(f"   {key}: {value}")
         
@@ -311,7 +310,7 @@ def demo_reply_scenarios():
         # Show latest qualification
         qualification = memory_manager.get_qualification(lead_id)
         if qualification:
-            print(f"   Latest Analysis:")
+            print("   Latest Analysis:")
             print(f"     Disposition: {qualification.get('lead_disposition', 'N/A')}")
             print(f"     Confidence: {qualification.get('disposition_confidence', 'N/A')}")
             print(f"     Sentiment: {qualification.get('sentiment', 'N/A')}")

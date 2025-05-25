@@ -222,7 +222,7 @@ def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_c
     memory_manager = get_memory_manager()
     
     # Import the reply analysis function
-    from experiments.run_reply_intent import analyze_reply_intent, build_context_from_reply
+    from workflows.run_reply_intent import analyze_reply_intent, build_context_from_reply
     
     # Create reply data structure that matches what the experiments module expects
     reply_data = {
@@ -238,11 +238,11 @@ def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_c
     mock_response = generate_mock_intent_response(intent_category, reply_content, lead_data)
     
     # Patch the LLM chain to return our mock response
-    with patch('experiments.run_reply_intent.get_llm_chain_for_reply_analysis') as mock_chain, \
-         patch('experiments.run_reply_intent.memory_manager', memory_manager):
+    with patch('workflows.run_reply_intent.get_llm_chain_for_reply_analysis') as mock_chain, \
+         patch('workflows.run_reply_intent.memory_manager', memory_manager):
         
         # Add lead to mock CRM so build_context_from_reply can find it
-        from experiments.run_reply_intent import mock_crm
+        from workflows.run_reply_intent import mock_crm
         mock_crm[lead_id] = {
             "id": lead_id,
             "name": lead_data["name"],

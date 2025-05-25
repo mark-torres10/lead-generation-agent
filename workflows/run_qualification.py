@@ -1,19 +1,13 @@
 """
 Lead qualification experiment using the new EmailQualifier agent.
 """
-import os
-import sys
-from datetime import datetime
 from typing import Dict, Any
 
-# Add the parent directory to the path so we can import from memory and agents
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-from memory.memory_manager import memory_manager
 from agents.agent_core import AgentCore
 from agents.email_qualifier import EmailQualifier
 from lib.env_vars import OPENAI_API_KEY
+from memory.memory_manager import memory_manager
+
 
 def create_email_qualifier() -> EmailQualifier:
     """Initialize the EmailQualifier agent."""
@@ -49,7 +43,7 @@ def qualify_lead(lead_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
         
         qualification_result = qualifier.qualify(lead_data)
         
-        print(f"Qualification Result:")
+        print("Qualification Result:")
         for key, value in qualification_result.items():
             print(f"  {key}: {value}")
         

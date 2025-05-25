@@ -303,7 +303,7 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
     memory_manager = get_memory_manager()
     
     # Import the scheduling function
-    from experiments.run_schedule_meeting import analyze_meeting_request, build_context_from_meeting_request
+    from workflows.run_schedule_meeting import analyze_meeting_request, build_context_from_meeting_request
     
     # Create a mock request data structure that matches what the experiments module expects
     mock_request_data = {
@@ -333,11 +333,11 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
     mock_response = generate_mock_scheduling_response(meeting_request)
     
     # Patch the LLM chain to return our mock response
-    with patch('experiments.run_schedule_meeting.get_llm_chain_for_meeting_scheduling') as mock_chain, \
-         patch('experiments.run_schedule_meeting.memory_manager', memory_manager):
+    with patch('workflows.run_schedule_meeting.get_llm_chain_for_meeting_scheduling') as mock_chain, \
+         patch('workflows.run_schedule_meeting.memory_manager', memory_manager):
         
         # Add lead to mock CRM so build_context_from_meeting_request can find it
-        from experiments.run_schedule_meeting import mock_crm_data
+        from workflows.run_schedule_meeting import mock_crm_data
         mock_crm_data[lead_id] = {
             "name": meeting_request["lead_name"],
             "company": meeting_request["lead_company"],

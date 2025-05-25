@@ -1,4 +1,3 @@
-import os
 from memory.memory_manager import memory_manager
 from agents.agent_core import AgentCore
 from agents.email_qualifier import EmailQualifier

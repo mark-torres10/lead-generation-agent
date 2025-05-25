@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-import experiments.run_qualify_followup as rqf
+import workflows.run_qualify_followup as rqf
 
 @pytest.fixture(autouse=True)
 def reset_state():
@@ -27,7 +27,7 @@ def test_extract_lead_context():
     assert "Acme Inc" in context["company"]
     assert "Interested in your product" in context["email_subject"]
 
-@patch('experiments.run_qualify_followup.llm_qualify_lead')
+@patch('workflows.run_qualify_followup.llm_qualify_lead')
 def test_run_lead_qualifier_agent_high_priority(mock_llm_qualify):
     # Mock the LLM to return high priority for Acme Inc (maintaining original test expectation)
     mock_llm_qualify.return_value = {
@@ -70,7 +70,7 @@ def test_update_crm():
     assert rqf.mock_crm["lead_001"]["interaction_history"][-1]["event"] == "test"
 
 
-@patch('experiments.run_qualify_followup.llm_qualify_lead')
+@patch('workflows.run_qualify_followup.llm_qualify_lead')
 def test_handle_new_lead_end_to_end(mock_llm_qualify):
     # Mock the LLM qualification
     mock_llm_qualify.return_value = {
