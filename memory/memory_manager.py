@@ -8,6 +8,7 @@ class MemoryManager:
     """High-level memory manager for lead management operations."""
     
     def __init__(self, store=None):
+        """Initialize the memory manager with a store."""
         self.store = store or memory_store
     
     # Lead operations
@@ -245,5 +246,9 @@ class MemoryManager:
         """Clear all data from the database (useful for testing)."""
         self.store.clear_all_data()
 
-# Global instance
-memory_manager = MemoryManager() 
+
+# Global instance for backward compatibility
+memory_manager = MemoryManager()
+
+# Export both the class and the instance
+__all__ = ['MemoryManager', 'memory_manager']
