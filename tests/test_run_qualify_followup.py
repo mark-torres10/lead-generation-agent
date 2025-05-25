@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch, MagicMock
 import experiments.run_qualify_followup as rqf
 
 @pytest.fixture(autouse=True)
@@ -26,7 +27,16 @@ def test_extract_lead_context():
     assert "Acme Inc" in context["company"]
     assert "Interested in your product" in context["email_subject"]
 
-def test_run_lead_qualifier_agent_high_priority():
+@patch('experiments.run_qualify_followup.llm_qualify_lead')
+def test_run_lead_qualifier_agent_high_priority(mock_llm_qualify):
+    # Mock the LLM to return high priority for Acme Inc (maintaining original test expectation)
+    mock_llm_qualify.return_value = {
+        "priority": "high",
+        "lead_score": 90,
+        "reasoning": "Acme Inc is a large corporation showing strong interest",
+        "next_action": "Schedule intro call"
+    }
+    
     context = rqf.extract_lead_context("lead_001")
     result = rqf.run_lead_qualifier_agent(context)
     assert result["priority"] == "high"
@@ -34,6 +44,12 @@ def test_run_lead_qualifier_agent_high_priority():
     assert "Acme Inc" in result["email_text"]
 
     # Test for a medium priority lead
+    mock_llm_qualify.return_value = {
+        "priority": "medium",
+        "lead_score": 70,
+        "reasoning": "Beta LLC shows moderate interest",
+        "next_action": "Send product brochure"
+    }
     context2 = rqf.extract_lead_context("lead_002")
     result2 = rqf.run_lead_qualifier_agent(context2)
     assert result2["priority"] == "medium"
@@ -54,7 +70,16 @@ def test_update_crm():
     assert rqf.mock_crm["lead_001"]["interaction_history"][-1]["event"] == "test"
 
 
-def test_handle_new_lead_end_to_end():
+@patch('experiments.run_qualify_followup.llm_qualify_lead')
+def test_handle_new_lead_end_to_end(mock_llm_qualify):
+    # Mock the LLM qualification
+    mock_llm_qualify.return_value = {
+        "priority": "high",
+        "lead_score": 90,
+        "reasoning": "Acme Inc shows strong buying signals",
+        "next_action": "Schedule intro call"
+    }
+    
     rqf.handle_new_lead("lead_001")
     lead = rqf.mock_crm["lead_001"]
     assert lead["priority"] == "high"

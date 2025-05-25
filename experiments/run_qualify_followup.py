@@ -1,12 +1,18 @@
 import os
+import sys
 import re
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
+from memory.memory_store import memory_store
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from project root
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 # Mock CRM data
 mock_crm = {
@@ -40,23 +46,17 @@ mock_crm = {
     }
 }
 
-# Mock sent emails
-sent_emails = []
-
-# Qualification memory store
-qualification_memory = {}
-
 def save_qualification_memory(lead_id, qualification_data):
-    """Save qualification results for a lead to memory."""
-    qualification_memory[lead_id] = qualification_data
+    """Save qualification results for a lead to SQLite memory."""
+    memory_store.save_qualification(lead_id, qualification_data)
 
 def get_qualification_memory(lead_id):
-    """Retrieve previous qualification results for a lead."""
-    return qualification_memory.get(lead_id)
+    """Retrieve previous qualification results for a lead from SQLite."""
+    return memory_store.get_qualification(lead_id)
 
 def has_been_qualified_before(lead_id):
-    """Check if a lead has been qualified before."""
-    return lead_id in qualification_memory
+    """Check if a lead has been qualified before in SQLite."""
+    return memory_store.has_qualification(lead_id)
 
 def get_llm_chain():
     """Create and return the LLM chain for lead qualification."""
@@ -222,20 +222,20 @@ def run_lead_qualifier_agent(context):
         }
     }
 
-def send_followup_email(email_text, to_address):
-    """Simulate sending a follow-up email."""
-    sent_emails.append({
-        "to": to_address,
-        "body": email_text
-    })
+def send_followup_email(email_text, to_address, lead_id=None):
+    """Simulate sending a follow-up email and log to SQLite."""
+    # Log to SQLite
+    memory_store.log_sent_email(lead_id, to_address, "Follow-up", email_text)
     print(f"[MOCK EMAIL SENT] To: {to_address}\n---\n{email_text}\n---\n")
 
 def update_crm(lead_id, updates):
-    """Update the mock CRM with new info."""
+    """Update the mock CRM with new info and log interactions to SQLite."""
     lead = mock_crm[lead_id]
     for k, v in updates.items():
         if k == "interaction_history":
             lead["interaction_history"].append(v)
+            # Also log to SQLite
+            memory_store.add_interaction(lead_id, "qualification", v)
         else:
             lead[k] = v
 
@@ -244,7 +244,7 @@ def handle_new_lead(lead_id):
     lead = load_from_crm(lead_id)
     context = extract_lead_context(lead_id)
     result = run_lead_qualifier_agent(context)
-    send_followup_email(result["email_text"], lead["email"])
+    send_followup_email(result["email_text"], lead["email"], lead_id)
     update_crm(lead_id, {
         "priority": result["priority"],
         "lead_score": result["lead_score"],
@@ -256,4 +256,5 @@ def handle_new_lead(lead_id):
 if __name__ == "__main__":
     handle_new_lead("lead_001")
     print("\n[CRM STATE]", mock_crm["lead_001"])
-    print("\n[SENT EMAILS]", sent_emails)
+    print("\n[SENT EMAILS FROM SQLITE]", memory_store.get_sent_emails("lead_001"))
+    print("\n[ALL QUALIFIED LEADS]", memory_store.get_all_leads())
