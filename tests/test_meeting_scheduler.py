@@ -286,15 +286,13 @@ class TestMeetingScheduler:
     def test_propose_meeting_times(self, mock_agent_core, mock_memory_manager):
         """Test proposing meeting times."""
         scheduler = MeetingScheduler(mock_agent_core, mock_memory_manager)
-        
         preferences = {
             'preferred_days': ['Monday', 'Tuesday'],
             'preferred_times': ['9:00-12:00'],
-            'urgency': 'high'
+            'urgency': 'high',
+            'timezone': 'UTC'
         }
-        
         proposals = scheduler.propose_meeting_times(preferences, 3)
-        
         assert isinstance(proposals, list)
         assert len(proposals) <= 3  # Should return at most 3 options
         

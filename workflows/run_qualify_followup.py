@@ -1,7 +1,7 @@
 from memory.memory_manager import memory_manager
 from agents.agent_core import AgentCore
 from agents.email_qualifier import EmailQualifier
-from lib.env_vars import OPENAI_API_KEY
+from lib.config_loader import get_config
 
 # Mock CRM data
 mock_crm = {
@@ -40,18 +40,8 @@ sent_emails = []
 
 def create_email_qualifier():
     """Create and return the EmailQualifier agent."""
-    # LLM configuration
-    llm_config = {
-        "model": "gpt-4o-mini",
-        "temperature": 0.0,
-        "max_tokens": 500,
-        "api_key": OPENAI_API_KEY
-    }
-    
-    # Create agent core
+    llm_config = get_config()
     agent_core = AgentCore(llm_config)
-    
-    # Create and return EmailQualifier
     return EmailQualifier(agent_core, memory_manager)
 
 def save_qualification_memory(lead_id, qualification_data):
@@ -89,8 +79,12 @@ def llm_qualify_lead(context):
         qualification_result = qualifier.qualify(lead_data)
         
         print(f"✅ Qualification Result for {lead_id}:")
-        for key, value in qualification_result.items():
-            print(f"   {key}: {value}")
+        if hasattr(qualification_result, 'model_dump'):
+            for key, value in qualification_result.model_dump().items():
+                print(f"   {key}: {value}")
+        else:
+            for key, value in qualification_result.items():
+                print(f"   {key}: {value}")
         
         return qualification_result
         
@@ -132,27 +126,33 @@ def run_lead_qualifier_agent(context):
     """Main lead qualification using EmailQualifier agent."""
     # Use EmailQualifier agent to qualify the lead
     llm_result = llm_qualify_lead(context)
-    
+
+    # If llm_result is a Pydantic model, convert to dict for downstream usage
+    if hasattr(llm_result, 'model_dump'):
+        llm_result_dict = llm_result.model_dump()
+    else:
+        llm_result_dict = llm_result
+
     # Generate follow-up email based on agent results
     email_text = (
         f"Hi {context['name']},\n\n"
         f"Thanks for reaching out about {context['interest']} at {context['company']}. "
         f"Based on your inquiry, I think we can definitely help! "
-        f"Our next step would be to {llm_result['next_action'].lower()}.\n\n"
+        f"Our next step would be to {llm_result_dict['next_action'].lower()}.\n\n"
         f"Best regards,\nSales Team"
     )
-    
+
     return {
-        "priority": llm_result["priority"],
-        "lead_score": llm_result["lead_score"],
-        "next_action": llm_result["next_action"],
+        "priority": llm_result_dict["priority"],
+        "lead_score": llm_result_dict["lead_score"],
+        "next_action": llm_result_dict["next_action"],
         "email_text": email_text,
         "history": {
             "event": "qualified",
-            "priority": llm_result["priority"],
-            "lead_score": llm_result["lead_score"],
-            "next_action": llm_result["next_action"],
-            "reasoning": llm_result["reasoning"]
+            "priority": llm_result_dict["priority"],
+            "lead_score": llm_result_dict["lead_score"],
+            "next_action": llm_result_dict["next_action"],
+            "reasoning": llm_result_dict["reasoning"]
         }
     }
 

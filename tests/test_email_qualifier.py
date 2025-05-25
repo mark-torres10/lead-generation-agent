@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 from agents.email_qualifier import EmailQualifier
+import pydantic
 
 
 class TestEmailQualifier:
@@ -77,12 +78,12 @@ class TestEmailQualifier:
         mock_chain.run.assert_called_once()
         
         # Verify result structure
-        assert result['priority'] == 'high'
-        assert result['lead_score'] == 85
-        assert 'reasoning' in result
-        assert 'next_action' in result
-        assert 'disposition' in result
-        assert 'confidence' in result
+        assert result.priority == 'high'
+        assert result.lead_score == 85
+        assert hasattr(result, 'reasoning')
+        assert hasattr(result, 'next_action')
+        assert hasattr(result, 'disposition')
+        assert hasattr(result, 'confidence')
     
     def test_qualify_invalid_lead_data(self, email_qualifier):
         """Test qualification with invalid lead data."""
@@ -372,22 +373,20 @@ class TestEmailQualifier:
     def test_parse_qualification_success(self, email_qualifier, mock_agent_core):
         """Test successful qualification parsing."""
         llm_response = "Priority: high\nLead Score: 85\nReasoning: Strong lead"
-        
-        result = email_qualifier._parse_qualification(llm_response)
-        
-        # Verify agent_core.parse_structured_response was called
-        mock_agent_core.parse_structured_response.assert_called_once_with(
-            llm_response,
-            {
-                'priority': 'medium',
-                'lead_score': 50,
-                'reasoning': 'No specific reasoning provided',
-                'next_action': 'Follow up',
-                'disposition': 'warm',
-                'confidence': 50
-            }
-        )
-        
-        assert result is not None
-        assert result['priority'] == 'high'
-        assert result['lead_score'] == 85 
+        lead_data = {
+            'lead_id': 'test_lead_id',
+            'name': 'Test Name',
+            'company': 'Test Company'
+        }
+        result = email_qualifier._parse_qualification(llm_response, lead_data)
+        assert result.priority == 'high'
+        assert result.lead_score == 85
+        assert result.lead_name == 'Test Name'
+        assert result.lead_company == 'Test Company'
+    
+    def test_parse_qualification_invalid_data(self, email_qualifier):
+        """Test qualification parsing with invalid lead data."""
+        invalid_data = {'name': 'John'}  # Missing required fields
+        llm_response = "Priority: high\nLead Score: 85\nReasoning: Strong lead"
+        with pytest.raises(ValueError, match="lead_data is missing required fields"):
+            email_qualifier._parse_qualification(llm_response, invalid_data) 

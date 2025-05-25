@@ -15,7 +15,7 @@ from typing import Dict, Any
 from memory.memory_manager import memory_manager
 from agents.agent_core import AgentCore
 from agents.meeting_scheduler import MeetingScheduler
-from lib.env_vars import OPENAI_API_KEY
+from lib.config_loader import get_config
 
 # Mock meeting request data
 mock_meeting_requests = {
@@ -103,18 +103,11 @@ mock_calendar_slots = {
 
 def create_meeting_scheduler():
     """Create and return the MeetingScheduler agent."""
-    # LLM configuration
-    llm_config = {
-        "model": "gpt-4o-mini",
-        "temperature": 0.3,
-        "max_tokens": 800,
-        "api_key": OPENAI_API_KEY
-    }
-    
-    # Create agent core
+    llm_config = get_config()
+    # Optionally override temperature/max_tokens for meeting scheduling if needed
+    llm_config["temperature"] = 0.3
+    llm_config["max_tokens"] = max(llm_config.get("max_tokens", 500), 800)
     agent_core = AgentCore(llm_config)
-    
-    # Create and return MeetingScheduler
     return MeetingScheduler(agent_core, memory_manager)
 
 def build_context_from_meeting_request(request_data, memory_mgr=None):

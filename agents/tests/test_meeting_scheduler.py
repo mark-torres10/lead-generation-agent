@@ -17,8 +17,7 @@ class TestMeetingScheduler:
         self.mock_calendar_service = Mock()
         self.meeting_scheduler = MeetingScheduler(
             self.mock_agent_core, 
-            self.mock_memory_manager, 
-            self.mock_calendar_service
+            self.mock_memory_manager
         )
         
         self.sample_meeting_request = {
@@ -35,57 +34,79 @@ class TestMeetingScheduler:
         """Test MeetingScheduler initialization with valid dependencies."""
         scheduler = MeetingScheduler(
             self.mock_agent_core, 
-            self.mock_memory_manager, 
-            self.mock_calendar_service
+            self.mock_memory_manager
         )
         assert scheduler is not None
     
     def test_init_with_none_dependencies(self):
         """Test MeetingScheduler initialization with None dependencies."""
         with pytest.raises(ValueError):
-            MeetingScheduler(None, self.mock_memory_manager, self.mock_calendar_service)
+            MeetingScheduler(None, self.mock_memory_manager)
         
         with pytest.raises(ValueError):
-            MeetingScheduler(self.mock_agent_core, None, self.mock_calendar_service)
-        
-        with pytest.raises(ValueError):
-            MeetingScheduler(self.mock_agent_core, self.mock_memory_manager, None)
+            MeetingScheduler(self.mock_agent_core, None)
     
     def test_analyze_request_with_valid_meeting_request(self):
         """Test meeting request analysis with valid request data."""
-        result = self.meeting_scheduler.analyze_request(self.sample_meeting_request)
-        
+        request_data = {
+            "request_text": "Could we schedule a demo call next week? I'm available Tuesday or Wednesday afternoon.",
+            "sender_email": "john@techcorp.com",
+            "preferred_times": ["Tuesday afternoon", "Wednesday afternoon"],
+            "meeting_type": "demo",
+            "lead_id": "john@techcorp.com"
+        }
+        # Patch the LLM chain's .run() to return a realistic response string
+        mock_chain = Mock()
+        mock_chain.run.return_value = (
+            "Intent: schedule_meeting\n"
+            "Urgency: high\n"
+            "Preferred Duration: 30\n"
+            "Time Preferences: Tuesday afternoon, Wednesday afternoon\n"
+            "Meeting Type: demo\n"
+            "Flexibility: medium\n"
+            "Next Action: Propose meeting times\n"
+        )
+        self.mock_agent_core.create_llm_chain.return_value = mock_chain
+        # Patch parse_structured_response to return a realistic dict
+        self.mock_agent_core.parse_structured_response.return_value = {
+            "intent": "schedule_meeting",
+            "urgency": "high",
+            "preferred_duration": 30,
+            "time_preferences": "Tuesday afternoon, Wednesday afternoon",
+            "meeting_type": "demo",
+            "flexibility": "medium",
+            "next_action": "Propose meeting times"
+        }
+        result = self.meeting_scheduler.analyze_request(request_data, request_data)
         assert result is not None
-        assert "meeting_intent" in result
-        assert "meeting_type" in result
+        assert "intent" in result
         assert "urgency" in result
-        assert "preferred_time" in result
-        assert "duration" in result
-        assert "analysis" in result
-        assert "recommended_response" in result
-        assert "booking_action" in result
-        assert "suggested_datetime" in result
+        assert "preferred_duration" in result
+        assert "time_preferences" in result
+        assert "meeting_type" in result
+        assert "flexibility" in result
+        assert "next_action" in result
     
     def test_analyze_request_with_missing_required_fields(self):
         """Test analysis with missing required fields."""
         incomplete_data = {"lead_name": "John Smith"}  # Missing required fields
         
         with pytest.raises(ValueError):
-            self.meeting_scheduler.analyze_request(incomplete_data)
+            self.meeting_scheduler.analyze_request(incomplete_data, incomplete_data)
     
     def test_analyze_request_with_empty_request_data(self):
         """Test analysis with empty request data."""
         with pytest.raises(ValueError):
-            self.meeting_scheduler.analyze_request({})
+            self.meeting_scheduler.analyze_request({}, {})
     
     def test_book_with_valid_meeting_details(self):
         """Test meeting booking with valid details."""
         meeting_details = {
-            "lead_name": "John Smith",
-            "lead_email": "john@techcorp.com",
-            "datetime": "2024-01-22T14:00:00Z",
+            "lead_id": "john@techcorp.com",
+            "start_time": datetime.now() + timedelta(days=1),
             "duration": 30,
             "meeting_type": "demo",
+            "attendees": ["john@techcorp.com"],
             "notes": "Product demo call"
         }
         
@@ -101,9 +122,8 @@ class TestMeetingScheduler:
     def test_book_with_invalid_datetime(self):
         """Test booking with invalid datetime."""
         invalid_meeting_details = {
-            "lead_name": "John Smith",
-            "lead_email": "john@techcorp.com",
-            "datetime": "invalid-datetime",
+            "lead_id": "john@techcorp.com",
+            "start_time": "invalid-datetime",
             "duration": 30,
             "meeting_type": "demo"
         }
@@ -113,11 +133,10 @@ class TestMeetingScheduler:
     
     def test_book_with_past_datetime(self):
         """Test booking with past datetime."""
-        past_datetime = (datetime.now() - timedelta(days=1)).isoformat()
+        past_datetime = datetime.now() - timedelta(days=1)
         past_meeting_details = {
-            "lead_name": "John Smith",
-            "lead_email": "john@techcorp.com",
-            "datetime": past_datetime,
+            "lead_id": "john@techcorp.com",
+            "start_time": past_datetime,
             "duration": 30,
             "meeting_type": "demo"
         }
@@ -127,7 +146,7 @@ class TestMeetingScheduler:
     
     def test_check_availability_with_valid_datetime(self):
         """Test availability check with valid datetime."""
-        test_datetime = "2024-01-22T14:00:00Z"
+        test_datetime = datetime.strptime("2024-01-22T14:00:00Z", "%Y-%m-%dT%H:%M:%SZ")
         duration = 30
         
         is_available = self.meeting_scheduler.check_availability(test_datetime, duration)
@@ -141,7 +160,7 @@ class TestMeetingScheduler:
     
     def test_check_availability_with_invalid_duration(self):
         """Test availability check with invalid duration."""
-        test_datetime = "2024-01-22T14:00:00Z"
+        test_datetime = datetime.strptime("2024-01-22T14:00:00Z", "%Y-%m-%dT%H:%M:%SZ")
         
         with pytest.raises(ValueError):
             self.meeting_scheduler.check_availability(test_datetime, 0)
@@ -151,8 +170,8 @@ class TestMeetingScheduler:
     
     def test_get_available_slots_with_valid_date_range(self):
         """Test getting available slots with valid date range."""
-        start_date = "2024-01-22"
-        end_date = "2024-01-26"
+        start_date = datetime.strptime("2024-01-22", "%Y-%m-%d")
+        end_date = datetime.strptime("2024-01-26", "%Y-%m-%d")
         duration = 30
         
         slots = self.meeting_scheduler.get_available_slots(start_date, end_date, duration)
@@ -167,12 +186,18 @@ class TestMeetingScheduler:
         """Test getting available slots with invalid date range."""
         # End date before start date
         with pytest.raises(ValueError):
-            self.meeting_scheduler.get_available_slots("2024-01-26", "2024-01-22", 30)
+            self.meeting_scheduler.get_available_slots(
+                datetime.strptime("2024-01-26", "%Y-%m-%d"),
+                datetime.strptime("2024-01-22", "%Y-%m-%d"),
+                30)
     
     def test_get_available_slots_with_invalid_duration(self):
         """Test getting available slots with invalid duration."""
         with pytest.raises(ValueError):
-            self.meeting_scheduler.get_available_slots("2024-01-22", "2024-01-26", 0)
+            self.meeting_scheduler.get_available_slots(
+                datetime.strptime("2024-01-22", "%Y-%m-%d"),
+                datetime.strptime("2024-01-26", "%Y-%m-%d"),
+                0)
     
     def test_propose_meeting_times_with_valid_preferences(self):
         """Test proposing meeting times with valid preferences."""

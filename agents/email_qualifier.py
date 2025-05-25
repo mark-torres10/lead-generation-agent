@@ -6,6 +6,7 @@ calculating lead scores, and determining priority levels and next actions.
 
 from typing import Dict, Any, Optional
 from .agent_core import AgentCore
+from .models import LeadQualificationResult
 
 
 class EmailQualifier:
@@ -30,7 +31,7 @@ class EmailQualifier:
         self.agent_core = agent_core
         self.memory_manager = memory_manager
     
-    def qualify(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
+    def qualify(self, lead_data: Dict[str, Any]) -> LeadQualificationResult:
         """Qualify a lead based on their email information.
         
         Analyzes lead data including name, company, email content, and interest
@@ -46,13 +47,7 @@ class EmailQualifier:
                       - email_body: Body content of email
         
         Returns:
-            Dict containing qualification results:
-                - priority: "high", "medium", or "low"
-                - lead_score: Integer score from 0-100
-                - reasoning: Detailed reasoning for the assessment
-                - next_action: Recommended next action
-                - disposition: Lead disposition (hot/warm/cold/unqualified)
-                - confidence: Confidence level in assessment (0-100)
+            LeadQualificationResult: Qualification results
         
         Raises:
             ValueError: If required lead_data fields are missing
@@ -86,14 +81,14 @@ class EmailQualifier:
             )
             
             # Parse response
-            result = self._parse_qualification(response)
+            result = self._parse_qualification(response, lead_data)
             
             return result
             
         except Exception as e:
             raise RuntimeError(f"LLM analysis failed: {str(e)}")
     
-    def analyze_with_context(self, lead_data: Dict[str, Any], previous_qualification: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def analyze_with_context(self, lead_data: Dict[str, Any], previous_qualification: Optional[Dict[str, Any]] = None) -> LeadQualificationResult:
         """Qualify a lead with consideration of previous qualification history.
         
         Performs qualification analysis while taking into account any previous
@@ -104,7 +99,7 @@ class EmailQualifier:
             previous_qualification: Previous qualification results if available
         
         Returns:
-            Dict containing updated qualification results with context consideration
+            LeadQualificationResult: Updated qualification results with context consideration
         
         Raises:
             ValueError: If lead_data is invalid
@@ -142,7 +137,7 @@ Previous Qualification:
             )
             
             # Parse response
-            result = self._parse_qualification(response)
+            result = self._parse_qualification(response, lead_data)
             
             return result
             
@@ -256,7 +251,7 @@ Previous Qualification:
         
         return base_priority
     
-    def _parse_qualification(self, llm_response: str) -> Dict[str, Any]:
+    def _parse_qualification(self, llm_response: str, lead_data: Optional[Dict[str, Any]] = None) -> LeadQualificationResult:
         """Parse LLM qualification response into structured data.
         
         Internal method to extract qualification fields from LLM response text
@@ -264,9 +259,10 @@ Previous Qualification:
         
         Args:
             llm_response: Raw text response from LLM
+            lead_data: Lead data dictionary to inject into parsed result
         
         Returns:
-            Dict containing parsed qualification data
+            LeadQualificationResult: Parsed qualification data
         
         Raises:
             ValueError: If response format is invalid
@@ -280,7 +276,27 @@ Previous Qualification:
             'confidence': 50
         }
         
-        return self.agent_core.parse_structured_response(llm_response, expected_fields)
+        parsed = self.agent_core.parse_structured_response(llm_response, expected_fields)
+        
+        # Inject lead_id, lead_name, lead_company from lead_data if available
+        if lead_data:
+            missing = []
+            if not (lead_data.get('lead_id') or lead_data.get('email')):
+                missing.append('lead_id or email')
+            if not lead_data.get('name'):
+                missing.append('name')
+            if not lead_data.get('company'):
+                missing.append('company')
+            if missing:
+                raise ValueError(f"lead_data is missing required fields: {', '.join(missing)}")
+            if 'lead_id' not in parsed:
+                parsed['lead_id'] = lead_data.get('lead_id') or lead_data.get('email')
+            if 'lead_name' not in parsed:
+                parsed['lead_name'] = lead_data.get('name')
+            if 'lead_company' not in parsed:
+                parsed['lead_company'] = lead_data.get('company')
+        
+        return LeadQualificationResult(**parsed)
     
     def _build_qualification_prompt(self, lead_data: Dict[str, Any], context: str = "") -> str:
         """Build prompt template for lead qualification analysis.

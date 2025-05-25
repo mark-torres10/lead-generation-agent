@@ -1,7 +1,7 @@
 from memory.memory_manager import memory_manager
 from agents.agent_core import AgentCore
 from agents.reply_analyzer import ReplyAnalyzer
-from lib.env_vars import OPENAI_API_KEY
+from lib.config_loader import get_config
 
 # Mock reply data - realistic email responses from leads
 mock_replies = {
@@ -70,18 +70,10 @@ mock_crm = {
 
 def create_reply_analyzer():
     """Create and return the ReplyAnalyzer agent."""
-    # LLM configuration
-    llm_config = {
-        "model": "gpt-4o-mini",
-        "temperature": 0.0,
-        "max_tokens": 1000,
-        "api_key": OPENAI_API_KEY
-    }
-    
-    # Create agent core
+    llm_config = get_config()
+    # Optionally override max_tokens for reply analysis if needed
+    llm_config["max_tokens"] = max(llm_config.get("max_tokens", 500), 1000)
     agent_core = AgentCore(llm_config)
-    
-    # Create and return ReplyAnalyzer
     return ReplyAnalyzer(agent_core, memory_manager)
 
 def build_context_from_reply(lead_id, reply_data):

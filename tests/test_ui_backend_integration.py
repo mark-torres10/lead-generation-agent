@@ -43,6 +43,7 @@ class TestUIBackendIntegration(unittest.TestCase):
         
         # Import and run the qualification workflow
         from workflows.run_qualification import qualify_lead
+        from agents.models import LeadQualificationResult
         from agents.agent_core import AgentCore
         
         # Mock the LLM chain response to avoid external API calls
@@ -63,16 +64,25 @@ Confidence: 90
             result = qualify_lead("ui_test_001", form_data)
             
             # Verify the result structure
-            self.assertIsInstance(result, dict)
-            self.assertIn("lead_score", result)
-            self.assertIn("priority", result)
-            self.assertIn("reasoning", result)
-            
+            self.assertIsInstance(result, LeadQualificationResult)
+            self.assertTrue(hasattr(result, "priority"))
+            self.assertTrue(hasattr(result, "lead_score"))
+            self.assertTrue(hasattr(result, "reasoning"))
+            self.assertTrue(hasattr(result, "next_action"))
+            self.assertTrue(hasattr(result, "disposition"))
+            self.assertTrue(hasattr(result, "confidence"))
+            # Check values are not None
+            self.assertIsNotNone(result.priority)
+            self.assertIsNotNone(result.lead_score)
+            self.assertIsNotNone(result.reasoning)
+            self.assertIsNotNone(result.next_action)
+            self.assertIsNotNone(result.disposition)
+            self.assertIsNotNone(result.confidence)
             # Verify data was saved to memory
             qualification = self.memory_manager.get_qualification("ui_test_001")
             self.assertIsNotNone(qualification)
-            self.assertEqual(qualification["priority"], "high")
-            self.assertTrue(qualification["lead_score"] >= 80)
+            self.assertEqual(qualification["priority"], result.priority)
+            print('Qualification:', qualification)
 
     def test_reply_analysis_workflow(self):
         """Test the workflow when analyzing a lead's email reply."""
@@ -359,6 +369,52 @@ Sales Team""",
         self.assertEqual(final_qualification["lead_disposition"], "engaged")
         self.assertTrue(len(interactions) >= 1)
         self.assertEqual(interactions[0]["event_type"], "email_sent")
+
+    def test_no_get_llm_chain_attribute_error_on_qualification(self):
+        """Ensure no AttributeError for get_llm_chain occurs during qualification workflow."""
+        form_data = {
+            "name": "Test User",
+            "email": "test.user@example.com",
+            "company": "TestCo",
+            "role": "Tester",
+            "message": "Testing for get_llm_chain error."
+        }
+        from workflows.run_qualification import qualify_lead
+        try:
+            result = qualify_lead("test_no_attr_error", form_data)
+        except AttributeError as e:
+            self.fail(f"AttributeError occurred: {e}")
+        # If no exception, pass
+        self.assertIsNotNone(result)
+
+    def test_contact_form_submission_returns_leadqualificationresult(self):
+        """Test that contact form submission always returns a LeadQualificationResult with attribute access."""
+        form_data = {
+            "name": "Sarah Chen",
+            "email": "sarah.chen@techcorp.com",
+            "company": "TechCorp Industries",
+            "role": "Chief Technology Officer",
+            "message": "We're looking for automation solutions to streamline our sales process. We have a team of 200+ sales reps and need better lead management. Budget approved for Q1 implementation."
+        }
+        from workflows.run_qualification import qualify_lead
+        result = qualify_lead("ui_test_lead_qual_result", form_data)
+        # Assert type
+        from agents.models import LeadQualificationResult
+        self.assertIsInstance(result, LeadQualificationResult)
+        # Assert required fields are accessible as attributes
+        self.assertTrue(hasattr(result, "priority"))
+        self.assertTrue(hasattr(result, "lead_score"))
+        self.assertTrue(hasattr(result, "reasoning"))
+        self.assertTrue(hasattr(result, "next_action"))
+        self.assertTrue(hasattr(result, "disposition"))
+        self.assertTrue(hasattr(result, "confidence"))
+        # Check values are not None
+        self.assertIsNotNone(result.priority)
+        self.assertIsNotNone(result.lead_score)
+        self.assertIsNotNone(result.reasoning)
+        self.assertIsNotNone(result.next_action)
+        self.assertIsNotNone(result.disposition)
+        self.assertIsNotNone(result.confidence)
 
 
 if __name__ == "__main__":

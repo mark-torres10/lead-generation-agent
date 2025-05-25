@@ -11,6 +11,7 @@ from ui.state.session import get_memory_manager, get_next_lead_id, store_demo_re
 from ui.components.agent_visualizer import display_agent_reasoning, display_agent_timeline
 from ui.components.crm_viewer import display_crm_record
 from ui.components.email_display import display_email_output
+from agents.models import ReplyAnalysisResult
 
 
 def render_reply_tab():
@@ -207,88 +208,35 @@ Sarah"""
             display_reply_analysis_results(latest_lead_id, lead_data, reply_content, latest_result)
 
 
-def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_content: str) -> Dict[str, Any]:
+def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_content: str) -> ReplyAnalysisResult:
     """
-    Process reply analysis using the actual reply intent workflow.
-    
+    Process reply analysis using the actual reply analysis workflow.
     Args:
         lead_id: Unique identifier for the lead
-        lead_data: Lead information
-        reply_content: The customer's reply content
-        
+        lead_data: Lead context data
+        reply_content: The reply text
     Returns:
-        Dictionary containing analysis results
+        ReplyAnalysisResult containing analysis results
     """
     memory_manager = get_memory_manager()
-    
-    # Import the reply analysis function
-    from workflows.run_reply_intent import analyze_reply_intent, build_context_from_reply
-    
-    # Create reply data structure that matches what the experiments module expects
-    reply_data = {
-        "reply_subject": "Re: Automation Platform Inquiry",
-        "reply_text": reply_content,
-        "timestamp": "2024-01-10 11:15:00"
-    }
-    
-    # Determine intent based on reply content (for demo purposes)
-    intent_category = determine_demo_intent(reply_content)
-    
-    # Generate mock scheduling response
-    mock_response = generate_mock_intent_response(intent_category, reply_content, lead_data)
-    
+    from workflows.run_reply_intent import analyze_reply_intent
     # Patch the LLM chain to return our mock response
-    with patch('workflows.run_reply_intent.get_llm_chain_for_reply_analysis') as mock_chain, \
+    with patch('workflows.run_reply_intent.get_llm_chain') as mock_chain, \
          patch('workflows.run_reply_intent.memory_manager', memory_manager):
-        
-        # Add lead to mock CRM so build_context_from_reply can find it
-        from workflows.run_reply_intent import mock_crm
-        mock_crm[lead_id] = {
-            "id": lead_id,
-            "name": lead_data["name"],
-            "company": lead_data["company"],
-            "email": lead_data["email"],
-            "status": "contacted",
-            "interest": "Automation platform inquiry",
-            "lead_disposition": None,
-            "last_contact": "2024-01-10",
-            "interaction_history": []
-        }
-        
-        # Ensure lead has a basic qualification to prevent NOT NULL constraint errors
-        if not memory_manager.has_qualification(lead_id):
-            initial_qualification = {
-                "priority": "medium",
-                "lead_score": 50,
-                "reasoning": "Initial contact - automation platform inquiry",
-                "next_action": "Analyze reply and determine next steps"
-            }
-            memory_manager.save_qualification(lead_id, initial_qualification)
-        
         mock_llm = Mock()
-        mock_llm.invoke.return_value = {"text": mock_response}
+        mock_llm.run.return_value = """
+        Disposition: engaged
+        Confidence: 95
+        Sentiment: positive
+        Urgency: high
+        Reasoning: The lead explicitly states interest and requests a call
+        Next Action: Schedule a discovery call within 24 hours
+        Follow Up Timing: immediate
+        Intent: meeting_request
+        """
         mock_chain.return_value = mock_llm
-        
-        # Build context using the experiments module function
-        context = build_context_from_reply(lead_id, reply_data)
-        
-        # Run the actual analysis with the correct parameter
-        analysis = analyze_reply_intent(context)
-    
-    # Generate response email
-    response_email = generate_response_email(lead_data, reply_content, analysis)
-    
-    # Get interaction history
-    interactions = memory_manager.get_interaction_history(lead_id)
-    
-    return {
-        'lead_data': lead_data,
-        'reply_content': reply_content,
-        'analysis': analysis,
-        'response_email': response_email,
-        'interactions': interactions,
-        'timeline': generate_reply_timeline(analysis)
-    }
+        analysis = analyze_reply_intent({"lead_id": lead_id, **lead_data, "reply_text": reply_content})
+    return analysis
 
 
 def determine_demo_intent(reply_content: str) -> str:
@@ -407,12 +355,12 @@ NEXT_ACTION: {next_action}
 FOLLOW_UP_TIMING: {follow_up_timing}"""
 
 
-def generate_response_email(lead_data: Dict[str, Any], reply_content: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+def generate_response_email(lead_data: Dict[str, Any], reply_content: str, analysis: ReplyAnalysisResult) -> Dict[str, Any]:
     """Generate a response email based on the analysis results."""
     
     name = lead_data.get('name', 'there')
     company = lead_data.get('company', 'your company')
-    disposition = analysis.get('disposition', 'maybe')  # Use disposition instead of intent
+    disposition = analysis.disposition
     
     if disposition == 'engaged':
         subject = f"Next steps for {company}'s automation project"
@@ -437,7 +385,7 @@ Senior Solutions Consultant"""
 
     elif disposition == 'maybe':
         # Check if it's an info request based on next_action
-        next_action = analysis.get('next_action', '').lower()
+        next_action = analysis.next_action.lower()
         if 'information' in next_action or 'details' in next_action:
             subject = f"Detailed information for {company}"
             body = f"""Hi {name},
@@ -518,18 +466,18 @@ Alex Thompson"""
         'metadata': {
             'generated_at': '2024-01-10 11:15:00',
             'disposition': disposition,
-            'confidence': analysis.get('confidence', 50),
+            'confidence': analysis.confidence,
             'tone': 'professional',
             'template_used': f'reply_{disposition}'
         }
     }
 
 
-def generate_reply_timeline(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+def generate_reply_timeline(analysis: ReplyAnalysisResult) -> List[Dict[str, Any]]:
     """Generate a timeline of agent actions for reply analysis."""
     
-    disposition = analysis.get('disposition', 'maybe')
-    confidence = analysis.get('confidence', 50)
+    disposition = analysis.disposition
+    confidence = analysis.confidence
     
     return [
         {
@@ -544,17 +492,17 @@ def generate_reply_timeline(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         },
         {
             "action": "Assess Sentiment",
-            "details": f"Determined sentiment: {analysis.get('sentiment', 'neutral')}",
+            "details": f"Determined sentiment: {analysis.sentiment}",
             "duration": "0.8s"
         },
         {
             "action": "Evaluate Urgency",
-            "details": f"Urgency level: {analysis.get('urgency', 'medium')}",
+            "details": f"Urgency level: {analysis.urgency}",
             "duration": "0.5s"
         },
         {
             "action": "Calculate Lead Score",
-            "details": f"Updated lead score to {analysis.get('lead_score', 50)}/100 based on analysis",
+            "details": f"Updated lead score to {analysis.lead_score}/100 based on analysis",
             "duration": "0.4s"
         },
         {
@@ -575,36 +523,48 @@ def generate_reply_timeline(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
-def display_reply_analysis_results(lead_id: str, lead_data: Dict[str, Any], reply_content: str, result: Dict[str, Any]):
-    """Display the reply analysis results in organized sections."""
-    
-    st.markdown("---")
-    st.markdown("## 🎯 Reply Analysis Results")
-    
-    analysis = result.get('analysis', {})
-    response_email = result.get('response_email', {})
-    interactions = result.get('interactions', [])
-    timeline = result.get('timeline', [])
+def display_reply_analysis_results(lead_id: str, lead_data: Dict[str, Any], reply_content: str, result: ReplyAnalysisResult):
+    """
+    Display the reply analysis results in the UI.
+    Args:
+        lead_id: Unique identifier for the lead
+        lead_data: Lead context data
+        reply_content: The reply text
+        result: ReplyAnalysisResult from the agent
+    """
+    st.success(f"Reply from {lead_data['name']} analyzed!")
+    st.markdown(f"**Disposition:** {result.disposition}")
+    st.markdown(f"**Confidence:** {result.confidence}")
+    st.markdown(f"**Sentiment:** {result.sentiment}")
+    st.markdown(f"**Urgency:** {result.urgency}")
+    st.markdown(f"**Reasoning:** {result.reasoning}")
+    st.markdown(f"**Next Action:** {result.next_action}")
+    st.markdown(f"**Follow-up Timing:** {result.follow_up_timing}")
+    st.markdown(f"**Intent:** {result.intent}")
+    if result.lead_score is not None:
+        st.markdown(f"**Lead Score:** {result.lead_score}")
+    if result.priority is not None:
+        st.markdown(f"**Priority:** {result.priority}")
     
     # Show original reply
     with st.expander("📨 Original Customer Reply", expanded=False):
         st.text_area("Reply Content", value=reply_content, height=120, disabled=True)
     
     # Agent reasoning section
-    display_agent_reasoning(analysis)
+    display_agent_reasoning(result)
     
     # Timeline section
-    if timeline:
-        display_agent_timeline(timeline)
+    if result.timeline:
+        display_agent_timeline(result.timeline)
     
     # Response email section
-    if response_email:
-        st.markdown("### 📧 Generated Response")
-        display_email_output(response_email)
+    if result.response_email:
+        st.markdown("### �� Generated Response")
+        display_email_output(result.response_email)
     
     # CRM update section
     st.markdown("### 🗂️ CRM Update")
-    display_crm_record(lead_data, analysis, interactions, title="Updated Lead Record")
+    display_crm_record(lead_data, result, result.interactions, title="Updated Lead Record")
     
     # Clear results button
     if st.button("🗑️ Clear Results", key="reply_clear_results_btn"):

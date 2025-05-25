@@ -16,7 +16,7 @@ from memory.memory_manager import MemoryManager
 from memory.memory_store import SQLiteMemoryStore
 from agents.agent_core import AgentCore
 from agents.meeting_scheduler import MeetingScheduler
-from experiments.run_schedule_meeting import (
+from workflows.run_schedule_meeting import (
     create_meeting_scheduler,
     analyze_meeting_request,
     handle_meeting_request,

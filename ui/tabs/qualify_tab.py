@@ -5,12 +5,13 @@ Demonstrates the lead qualification workflow from contact form submission to fol
 
 import streamlit as st
 from typing import Dict, Any
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 from ui.state.session import get_memory_manager, get_next_lead_id, store_demo_result
 from ui.components.agent_visualizer import display_agent_reasoning, display_agent_timeline
 from ui.components.crm_viewer import display_crm_record
 from ui.components.email_display import display_email_output
+from agents.models import LeadQualificationResult
 
 
 def render_qualify_tab():
@@ -153,57 +154,21 @@ def render_qualify_tab():
             display_qualification_results(latest_lead_id, form_data, latest_result)
 
 
-def process_qualification_demo(lead_id: str, form_data: Dict[str, Any]) -> Dict[str, Any]:
+def process_qualification_demo(lead_id: str, form_data: Dict[str, Any]) -> LeadQualificationResult:
     """
     Process lead qualification using the actual qualification workflow.
-    
     Args:
         lead_id: Unique identifier for the lead
         form_data: Contact form data
-        
     Returns:
-        Dictionary containing qualification results
+        LeadQualificationResult containing qualification results
     """
     memory_manager = get_memory_manager()
-    
-    # Import the qualification function
     from workflows.run_qualification import qualify_lead
-    
-    # Mock the LLM response for demo purposes
-    mock_response = f"""
-    Priority: high
-    Lead Score: 85
-    Reasoning: {form_data['role']} from {form_data['company']} showing clear interest in automation solutions. Message indicates specific needs and potential budget availability.
-    Next Action: Send personalized follow-up email with solution overview and meeting request
-    Lead Disposition: engaged
-    Sentiment: positive
-    Urgency: medium
-    """
-    
-    # Patch the LLM chain to return our mock response
-    with patch('workflows.run_qualification.get_llm_chain') as mock_chain, \
-         patch('workflows.run_qualification.memory_manager', memory_manager):
-        
-        mock_llm = Mock()
-        mock_llm.run.return_value = mock_response
-        mock_chain.return_value = mock_llm
-        
-        # Run the actual qualification
+    # Only patch memory_manager for test/demo isolation
+    with patch('workflows.run_qualification.memory_manager', memory_manager):
         qualification = qualify_lead(lead_id, form_data)
-    
-    # Generate follow-up email
-    email_data = generate_follow_up_email(form_data, qualification)
-    
-    # Get interaction history
-    interactions = memory_manager.get_interaction_history(lead_id)
-    
-    return {
-        'form_data': form_data,
-        'qualification': qualification,
-        'email': email_data,
-        'interactions': interactions,
-        'timeline': generate_demo_timeline(form_data, qualification)
-    }
+    return qualification
 
 
 def generate_follow_up_email(form_data: Dict[str, Any], qualification: Dict[str, Any]) -> Dict[str, Any]:
@@ -321,27 +286,36 @@ def generate_demo_timeline(form_data: Dict[str, Any], qualification: Dict[str, A
     ]
 
 
-def display_qualification_results(lead_id: str, form_data: Dict[str, Any], result: Dict[str, Any]):
-    """Display the qualification results in organized sections."""
-    
-    st.markdown("---")
-    st.markdown("## 🎯 Qualification Results")
-    
-    qualification = result.get('qualification', {})
-    email_data = result.get('email', {})
-    interactions = result.get('interactions', [])
-    timeline = result.get('timeline', [])
+def display_qualification_results(lead_id: str, form_data: Dict[str, Any], result: LeadQualificationResult):
+    """
+    Display the qualification results in the UI.
+    Args:
+        lead_id: Unique identifier for the lead
+        form_data: Contact form data
+        result: LeadQualificationResult from the agent
+    """
+    st.success(f"Lead {form_data['name']} qualified!")
+    st.markdown(f"**Priority:** {result.priority}")
+    st.markdown(f"**Lead Score:** {result.lead_score}")
+    st.markdown(f"**Reasoning:** {result.reasoning}")
+    st.markdown(f"**Next Action:** {result.next_action}")
+    st.markdown(f"**Disposition:** {result.disposition}")
+    st.markdown(f"**Confidence:** {result.confidence}")
+    if result.sentiment:
+        st.markdown(f"**Sentiment:** {result.sentiment}")
+    if result.urgency:
+        st.markdown(f"**Urgency:** {result.urgency}")
     
     # Agent reasoning section
-    display_agent_reasoning(qualification)
+    display_agent_reasoning(result.qualification)
     
     # Timeline section
-    if timeline:
-        display_agent_timeline(timeline)
+    if result.timeline:
+        display_agent_timeline(result.timeline)
     
     # Email output section
-    if email_data:
-        display_email_output(email_data)
+    if result.email:
+        display_email_output(result.email)
     
     # CRM sections
     col1, col2 = st.columns(2)
@@ -363,7 +337,7 @@ def display_qualification_results(lead_id: str, form_data: Dict[str, Any], resul
     with col2:
         # After state (with qualification)
         st.subheader("🗂️ CRM Record - After")
-        display_crm_record(form_data, qualification, interactions, title="")
+        display_crm_record(form_data, result.qualification, result.interactions, title="")
     
     # Clear results button
     if st.button("🗑️ Clear Results", key="qualify_clear_results_btn"):

@@ -5,19 +5,13 @@ from typing import Dict, Any
 
 from agents.agent_core import AgentCore
 from agents.email_qualifier import EmailQualifier
-from lib.env_vars import OPENAI_API_KEY
 from memory.memory_manager import memory_manager
+from lib.config_loader import get_config
 
 
 def create_email_qualifier() -> EmailQualifier:
     """Initialize the EmailQualifier agent."""
-    # Create LLM config for AgentCore
-    llm_config = {
-        "model": "gpt-4o-mini",
-        "temperature": 0.7,
-        "max_tokens": 500,
-        "api_key": OPENAI_API_KEY
-    }
+    llm_config = get_config()
     agent_core = AgentCore(llm_config=llm_config)
     return EmailQualifier(agent_core=agent_core, memory_manager=memory_manager)
 
@@ -44,8 +38,12 @@ def qualify_lead(lead_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
         qualification_result = qualifier.qualify(lead_data)
         
         print("Qualification Result:")
-        for key, value in qualification_result.items():
-            print(f"  {key}: {value}")
+        if hasattr(qualification_result, 'model_dump'):
+            for key, value in qualification_result.model_dump().items():
+                print(f"  {key}: {value}")
+        else:
+            for key, value in qualification_result.items():
+                print(f"  {key}: {value}")
         
         # Save to memory
         memory_manager.save_qualification(lead_id, qualification_result)
@@ -55,6 +53,14 @@ def qualify_lead(lead_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
         
         print(f"\nQualification saved to memory for lead: {lead_id}")
         
+        # Always return as LeadQualificationResult
+        from agents.models import LeadQualificationResult
+        if isinstance(qualification_result, dict):
+            # Ensure required fields are present
+            qualification_result.setdefault('lead_id', lead_data.get('email', lead_id))
+            qualification_result.setdefault('lead_name', lead_data.get('name', ''))
+            qualification_result.setdefault('lead_company', lead_data.get('company', ''))
+            return LeadQualificationResult(**qualification_result)
         return qualification_result
         
     except Exception as e:
@@ -68,10 +74,16 @@ def qualify_lead(lead_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
             'lead_disposition': 'unqualified',
             'disposition_confidence': 0,
             'sentiment': 'neutral',
-            'urgency': 'later'
+            'urgency': 'later',
+            'disposition': 'unqualified',
+            'confidence': 0,
+            'lead_id': lead_data.get('email', lead_id),
+            'lead_name': lead_data.get('name', ''),
+            'lead_company': lead_data.get('company', '')
         }
         memory_manager.save_qualification(lead_id, default_qualification)
-        return default_qualification
+        from agents.models import LeadQualificationResult
+        return LeadQualificationResult(**default_qualification)
 
 def demo_qualification():
     """Demo the qualification system with sample leads."""
