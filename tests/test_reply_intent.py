@@ -14,7 +14,7 @@ from experiments.run_reply_intent import (
     mock_replies,
     mock_crm
 )
-from memory.memory_store import memory_store
+from memory.memory_manager import memory_manager
 
 class TestReplyIntentAnalysis(unittest.TestCase):
     """Test suite for reply intent analysis functionality."""
@@ -98,7 +98,7 @@ class TestReplyIntentAnalysis(unittest.TestCase):
     def test_build_context_from_reply_with_qualification(self):
         """Test building context when lead has previous qualification."""
         # Save a test qualification first
-        memory_store.save_qualification(self.test_lead_id, self.mock_qualification)
+        memory_manager.save_qualification(self.test_lead_id, self.mock_qualification)
         
         # Add test lead to mock CRM
         mock_crm[self.test_lead_id] = {
@@ -161,7 +161,7 @@ class TestReplyIntentAnalysis(unittest.TestCase):
         mock_llm_chain.return_value = mock_chain
         
         # Save initial qualification
-        memory_store.save_qualification(self.test_lead_id, self.mock_qualification)
+        memory_manager.save_qualification(self.test_lead_id, self.mock_qualification)
         
         # Add test lead to mock CRM
         mock_crm[self.test_lead_id] = {
@@ -180,7 +180,7 @@ class TestReplyIntentAnalysis(unittest.TestCase):
         self.assertEqual(result["sentiment"], "positive")
         
         # Check that qualification was updated in memory
-        updated_qualification = memory_store.get_qualification(self.test_lead_id)
+        updated_qualification = memory_manager.get_qualification(self.test_lead_id)
         self.assertEqual(updated_qualification["lead_disposition"], "engaged")
         self.assertEqual(updated_qualification["disposition_confidence"], 90)
         self.assertEqual(updated_qualification["sentiment"], "positive")
@@ -305,7 +305,7 @@ class TestReplyIntentIntegration(unittest.TestCase):
         self.test_lead_id = "integration_test_lead"
         
         # Clean up any existing data
-        if memory_store.has_qualification(self.test_lead_id):
+        if memory_manager.has_qualification(self.test_lead_id):
             # Note: We don't have a delete method, so we'll work around existing data
             pass
     
@@ -318,7 +318,7 @@ class TestReplyIntentIntegration(unittest.TestCase):
             "reasoning": "Initial qualification",
             "next_action": "Follow up"
         }
-        memory_store.save_qualification(self.test_lead_id, initial_qualification)
+        memory_manager.save_qualification(self.test_lead_id, initial_qualification)
         
         # Simulate first reply analysis by updating the qualification directly
         first_analysis = {
@@ -338,17 +338,17 @@ class TestReplyIntentIntegration(unittest.TestCase):
             "disposition_confidence": first_analysis["confidence"],
             "sentiment": first_analysis["sentiment"]
         })
-        memory_store.save_qualification(self.test_lead_id, updated_qualification)
+        memory_manager.save_qualification(self.test_lead_id, updated_qualification)
         
         # Add interaction
-        memory_store.add_interaction(self.test_lead_id, "reply_analysis", first_analysis)
+        memory_manager.add_interaction(self.test_lead_id, "reply_analysis", first_analysis)
         
         # Verify data persistence
-        retrieved_qualification = memory_store.get_qualification(self.test_lead_id)
+        retrieved_qualification = memory_manager.get_qualification(self.test_lead_id)
         self.assertEqual(retrieved_qualification["lead_disposition"], "maybe")
         self.assertEqual(retrieved_qualification["disposition_confidence"], 60)
         
-        interactions = memory_store.get_interaction_history(self.test_lead_id)
+        interactions = memory_manager.get_interaction_history(self.test_lead_id)
         reply_analyses = [i for i in interactions if i["event_type"] == "reply_analysis"]
         self.assertGreaterEqual(len(reply_analyses), 1)
 

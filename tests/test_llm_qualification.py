@@ -31,7 +31,14 @@ def test_save_and_get_qualification_memory():
     rqf.save_qualification_memory(lead_id, qualification_data)
     retrieved = rqf.get_qualification_memory(lead_id)
     
-    assert retrieved == qualification_data
+    # Check that the core data matches (ignoring timestamps)
+    assert retrieved["priority"] == qualification_data["priority"]
+    assert retrieved["lead_score"] == qualification_data["lead_score"]
+    assert retrieved["reasoning"] == qualification_data["reasoning"]
+    assert retrieved["next_action"] == qualification_data["next_action"]
+    # Check that timestamps were added
+    assert "created_at" in retrieved
+    assert "updated_at" in retrieved
     assert rqf.has_been_qualified_before(lead_id) == True
 
 def test_has_been_qualified_before_false():

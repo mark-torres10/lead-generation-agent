@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from memory.memory_store import memory_store
+from memory.memory_manager import memory_manager
 
 # Load environment variables from project root
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -46,17 +46,21 @@ mock_crm = {
     }
 }
 
+# Track sent emails for testing
+sent_emails = []
+
 def save_qualification_memory(lead_id, qualification_data):
     """Save qualification results for a lead to SQLite memory."""
-    memory_store.save_qualification(lead_id, qualification_data)
+    memory_manager.save_qualification(lead_id, qualification_data)
 
 def get_qualification_memory(lead_id):
     """Retrieve previous qualification results for a lead from SQLite."""
-    return memory_store.get_qualification(lead_id)
+    return memory_manager.get_qualification(lead_id)
 
 def has_been_qualified_before(lead_id):
     """Check if a lead has been qualified before in SQLite."""
-    return memory_store.has_qualification(lead_id)
+    qualification = memory_manager.get_qualification(lead_id)
+    return qualification is not None
 
 def get_llm_chain():
     """Create and return the LLM chain for lead qualification."""
@@ -223,19 +227,26 @@ def run_lead_qualifier_agent(context):
     }
 
 def send_followup_email(email_text, to_address, lead_id=None):
-    """Simulate sending a follow-up email and log to SQLite."""
-    # Log to SQLite
-    memory_store.log_sent_email(lead_id, to_address, "Follow-up", email_text)
+    """Simulate sending a follow-up email and log to memory."""
+    # Log to memory manager
+    memory_manager.log_sent_email(lead_id, to_address, "Follow-up", email_text)
+    # Also track in global list for testing
+    sent_emails.append({
+        "lead_id": lead_id,
+        "to": to_address,
+        "subject": "Follow-up",
+        "body": email_text
+    })
     print(f"[MOCK EMAIL SENT] To: {to_address}\n---\n{email_text}\n---\n")
 
 def update_crm(lead_id, updates):
-    """Update the mock CRM with new info and log interactions to SQLite."""
+    """Update the mock CRM with new info and log interactions to memory."""
     lead = mock_crm[lead_id]
     for k, v in updates.items():
         if k == "interaction_history":
             lead["interaction_history"].append(v)
-            # Also log to SQLite
-            memory_store.add_interaction(lead_id, "qualification", v)
+            # Also log to memory manager
+            memory_manager.add_interaction(lead_id, "qualification", v)
         else:
             lead[k] = v
 
@@ -256,5 +267,5 @@ def handle_new_lead(lead_id):
 if __name__ == "__main__":
     handle_new_lead("lead_001")
     print("\n[CRM STATE]", mock_crm["lead_001"])
-    print("\n[SENT EMAILS FROM SQLITE]", memory_store.get_sent_emails("lead_001"))
-    print("\n[ALL QUALIFIED LEADS]", memory_store.get_all_leads())
+    print("\n[SENT EMAILS FROM MEMORY]", memory_manager.get_sent_emails("lead_001"))
+    print("\n[QUALIFICATION DATA]", memory_manager.get_qualification("lead_001"))

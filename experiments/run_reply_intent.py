@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from memory.memory_store import memory_store
+from memory.memory_manager import memory_manager
 
 # Load environment variables from project root
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -188,8 +188,8 @@ def build_context_from_reply(lead_id, reply_data):
     # Get lead info from CRM
     lead = mock_crm.get(lead_id, {})
     
-    # Get previous qualification from SQLite
-    previous_qualification = memory_store.get_qualification(lead_id)
+    # Get previous qualification from memory manager
+    previous_qualification = memory_manager.get_qualification(lead_id)
     previous_context = ""
     
     if previous_qualification:
@@ -198,160 +198,185 @@ Previous Qualification:
 - Priority: {previous_qualification['priority']}
 - Score: {previous_qualification['lead_score']}
 - Previous Reasoning: {previous_qualification['reasoning']}
-- Previous Next Action: {previous_qualification['next_action']}
+- Next Action: {previous_qualification['next_action']}
 """
     else:
-        previous_context = "No previous qualification found."
+        previous_context = "No previous qualification found for this lead."
     
-    # Get interaction history
-    interactions = memory_store.get_interaction_history(lead_id)
-    if interactions:
-        previous_context += f"\nRecent Interactions: {len(interactions)} recorded"
-    
-    return {
+    # Build context for LLM
+    context = {
         "lead_id": lead_id,
         "name": lead.get("name", "Unknown"),
         "company": lead.get("company", "Unknown"),
         "email": lead.get("email", "Unknown"),
         "interest": lead.get("interest", "Unknown"),
-        "reply_subject": reply_data["reply_subject"],
-        "reply_text": reply_data["reply_text"],
-        "timestamp": reply_data["timestamp"],
+        "reply_subject": reply_data.get("reply_subject", ""),
+        "reply_text": reply_data.get("reply_text", ""),
+        "timestamp": reply_data.get("timestamp", ""),
         "previous_context": previous_context
     }
+    
+    return context
 
 def analyze_reply_intent(context):
-    """Use LLM to analyze reply intent and determine lead disposition."""
-    lead_id = context["lead_id"]
+    """Analyze reply intent using LLM and return structured results."""
+    print(f"🤖 Analyzing reply intent for {context['name']} from {context['company']}")
     
-    # Get LLM chain and invoke
+    # Get LLM chain
     chain = get_llm_chain_for_reply_analysis()
-    response = chain.invoke({
-        "name": context["name"],
-        "company": context["company"],
-        "email": context["email"],
-        "interest": context["interest"],
-        "reply_subject": context["reply_subject"],
-        "reply_text": context["reply_text"],
-        "timestamp": context["timestamp"],
-        "previous_context": context["previous_context"]
-    })
     
-    # Parse the response
-    analysis_result = parse_reply_analysis_response(response["text"])
-    
-    # Update the lead's qualification with new disposition
-    existing_qualification = memory_store.get_qualification(lead_id)
-    if existing_qualification:
-        # Update existing qualification with disposition info
-        updated_qualification = existing_qualification.copy()
-        updated_qualification.update({
-            "lead_disposition": analysis_result["disposition"],
-            "disposition_confidence": analysis_result["confidence"],
-            "sentiment": analysis_result["sentiment"],
-            "urgency": analysis_result["urgency"],
-            "last_reply_analysis": analysis_result["reasoning"],
-            "recommended_follow_up": analysis_result["next_action"],
-            "follow_up_timing": analysis_result["follow_up_timing"]
-        })
-        memory_store.save_qualification(lead_id, updated_qualification)
-    
-    return analysis_result
+    # Run analysis
+    try:
+        response = chain.invoke(context)
+        llm_response = response["text"]
+        
+        print(f"📝 LLM Analysis Response:\n{llm_response}")
+        
+        # Parse the response
+        analysis_result = parse_reply_analysis_response(llm_response)
+        
+        print(f"✅ Parsed Analysis:")
+        for key, value in analysis_result.items():
+            print(f"   {key}: {value}")
+        
+        # Update qualification in memory with reply analysis
+        lead_id = context.get("lead_id")
+        if lead_id:
+            qualification_update = {
+                "lead_disposition": analysis_result["disposition"],
+                "disposition_confidence": analysis_result["confidence"],
+                "sentiment": analysis_result["sentiment"],
+                "urgency": analysis_result["urgency"],
+                "last_reply_analysis": analysis_result["reasoning"],
+                "recommended_follow_up": analysis_result["next_action"],
+                "follow_up_timing": analysis_result["follow_up_timing"]
+            }
+            memory_manager.save_qualification(lead_id, qualification_update)
+        
+        return analysis_result
+        
+    except Exception as e:
+        print(f"❌ Error during LLM analysis: {str(e)}")
+        # Return default analysis on error
+        return {
+            "disposition": "maybe",
+            "confidence": 50,
+            "sentiment": "neutral",
+            "urgency": "medium", 
+            "reasoning": f"Analysis failed: {str(e)}",
+            "next_action": "Manual review required",
+            "follow_up_timing": "1-week"
+        }
 
 def update_crm_with_disposition(lead_id, analysis_result):
-    """Update the mock CRM with reply analysis results."""
+    """Update CRM and memory with reply analysis results."""
+    print(f"💾 Updating CRM for lead {lead_id}")
+    
+    # Update mock CRM
     if lead_id in mock_crm:
-        mock_crm[lead_id].update({
-            "lead_disposition": analysis_result["disposition"],
-            "sentiment": analysis_result["sentiment"],
-            "urgency": analysis_result["urgency"],
-            "next_action": analysis_result["next_action"],
-            "follow_up_timing": analysis_result["follow_up_timing"]
-        })
+        mock_crm[lead_id]["lead_disposition"] = analysis_result["disposition"]
+        mock_crm[lead_id]["sentiment"] = analysis_result["sentiment"]
+        mock_crm[lead_id]["last_contact"] = analysis_result.get("timestamp", "2025-05-25")
         
-        # Log interaction to SQLite
-        interaction_data = {
-            "event": "reply_analyzed",
+        # Add to interaction history
+        interaction = {
+            "type": "reply_analysis",
             "disposition": analysis_result["disposition"],
             "confidence": analysis_result["confidence"],
             "sentiment": analysis_result["sentiment"],
-            "reasoning": analysis_result["reasoning"],
-            "next_action": analysis_result["next_action"]
+            "timestamp": analysis_result.get("timestamp", "2025-05-25")
         }
-        memory_store.add_interaction(lead_id, "reply_analysis", interaction_data)
+        mock_crm[lead_id]["interaction_history"].append(interaction)
+    
+    # Update qualification in memory with reply analysis
+    qualification_update = {
+        "lead_disposition": analysis_result["disposition"],
+        "disposition_confidence": analysis_result["confidence"],
+        "sentiment": analysis_result["sentiment"],
+        "urgency": analysis_result["urgency"],
+        "last_reply_analysis": analysis_result["reasoning"],
+        "recommended_follow_up": analysis_result["next_action"],
+        "follow_up_timing": analysis_result["follow_up_timing"]
+    }
+    
+    memory_manager.save_qualification(lead_id, qualification_update)
+    
+    print(f"✅ Updated qualification for {lead_id}")
 
 def handle_reply(lead_id, reply_id):
-    """Main flow: analyze reply intent, update disposition, recommend next action."""
+    """Handle a reply end-to-end: analyze intent and update records."""
+    print(f"📧 Analyzing reply from {lead_id}")
+    
     # Get reply data
-    reply_data = mock_replies.get(reply_id)
-    if not reply_data:
+    if reply_id not in mock_replies:
         print(f"❌ Reply {reply_id} not found")
         return None
-        
-    if reply_data["lead_id"] != lead_id:
+    
+    reply_data = mock_replies[reply_id]
+    
+    # Validate that the reply belongs to the correct lead
+    if reply_data.get("lead_id") != lead_id:
         print(f"❌ Reply {reply_id} does not belong to lead {lead_id}")
         return None
     
-    print(f"📧 Analyzing reply from {lead_id}")
-    print(f"Reply: \"{reply_data['reply_text'][:100]}...\"")
+    print(f'Reply: "{reply_data["reply_text"][:100]}..."')
     
-    # Build context and analyze
+    # Build context for analysis
     context = build_context_from_reply(lead_id, reply_data)
+    
+    # Analyze the reply
     analysis_result = analyze_reply_intent(context)
     
-    # Update CRM
+    # Update CRM with results
     update_crm_with_disposition(lead_id, analysis_result)
     
-    print(f"\n🎯 Analysis Results:")
-    print(f"   Disposition: {analysis_result['disposition']}")
-    print(f"   Confidence: {analysis_result['confidence']}%")
-    print(f"   Sentiment: {analysis_result['sentiment']}")
-    print(f"   Urgency: {analysis_result['urgency']}")
-    print(f"   Next Action: {analysis_result['next_action']}")
-    print(f"   Follow-up Timing: {analysis_result['follow_up_timing']}")
-    print(f"   Reasoning: {analysis_result['reasoning'][:200]}...")
+    # Log interaction in memory
+    interaction_data = {
+        "reply_text": reply_data["reply_text"],
+        "analysis_result": analysis_result,
+        "timestamp": reply_data["timestamp"]
+    }
+    
+    memory_manager.add_interaction(lead_id, "reply_analyzed", interaction_data)
     
     return analysis_result
 
 def demo_reply_scenarios():
-    """Demo function to test different reply scenarios."""
-    print("🔍 Reply Intent Analysis Demo")
-    print("=" * 50)
+    """Demo the reply intent analysis system with various scenarios."""
+    print("🎯 REPLY INTENT ANALYSIS DEMO")
+    print("=" * 60)
     
-    # Test scenarios
-    scenarios = [
-        ("lead_001", "reply_001", "Highly Interested Reply"),
-        ("lead_001", "reply_002", "Polite Decline Reply"), 
-        ("lead_001", "reply_003", "Maybe/Evaluating Reply"),
-        ("lead_002", "reply_004", "Direct Rejection Reply"),
-        ("lead_002", "reply_005", "Delayed Interest Reply")
-    ]
-    
-    for lead_id, reply_id, scenario_name in scenarios:
-        print(f"\n📋 Scenario: {scenario_name}")
-        print("-" * 30)
+    # Process each reply
+    results = {}
+    for reply_id, reply_data in mock_replies.items():
+        lead_id = reply_data["lead_id"]
+        print(f"\n📧 Processing {reply_id} from {lead_id}")
+        print("-" * 40)
+        
         result = handle_reply(lead_id, reply_id)
-        print()
+        results[reply_id] = result
+    
+    # Show final analysis summary
+    print(f"\n{'='*60}")
+    print("FINAL ANALYSIS SUMMARY")
+    print(f"{'='*60}")
+    
+    for lead_id, lead_data in mock_crm.items():
+        print(f"\n🏢 Lead: {lead_id}")
+        print(f"   Name: {lead_data['name']}")
+        print(f"   Company: {lead_data['company']}")
+        print(f"   Current Disposition: {lead_data.get('lead_disposition', 'Unknown')}")
+        print(f"   Interactions: {len(lead_data['interaction_history'])}")
+        
+        # Show latest qualification
+        qualification = memory_manager.get_qualification(lead_id)
+        if qualification:
+            print(f"   Latest Analysis:")
+            print(f"     Disposition: {qualification.get('lead_disposition', 'N/A')}")
+            print(f"     Confidence: {qualification.get('disposition_confidence', 'N/A')}")
+            print(f"     Sentiment: {qualification.get('sentiment', 'N/A')}")
+            print(f"     Next Action: {qualification.get('recommended_follow_up', 'N/A')}")
+            print(f"     Follow-up Timing: {qualification.get('follow_up_timing', 'N/A')}")
 
 if __name__ == "__main__":
-    # Run demo scenarios
     demo_reply_scenarios()
-    
-    # Show final CRM state
-    print("\n📊 Final CRM State:")
-    print("=" * 30)
-    for lead_id, lead_data in mock_crm.items():
-        print(f"\n{lead_id}: {lead_data['name']} ({lead_data['company']})")
-        print(f"   Disposition: {lead_data.get('lead_disposition', 'Not analyzed')}")
-        print(f"   Sentiment: {lead_data.get('sentiment', 'Unknown')}")
-        print(f"   Next Action: {lead_data.get('next_action', 'None')}")
-    
-    # Show SQLite memory state
-    print(f"\n💾 SQLite Memory State:")
-    print("=" * 30)
-    all_leads = memory_store.get_all_leads()
-    for lead in all_leads:
-        print(f"Lead {lead['lead_id']}: {lead.get('lead_disposition', 'No disposition')} disposition")
-        interactions = memory_store.get_interaction_history(lead['lead_id'])
-        reply_analyses = [i for i in interactions if i['event_type'] == 'reply_analysis']
-        print(f"   Reply analyses: {len(reply_analyses)}")
