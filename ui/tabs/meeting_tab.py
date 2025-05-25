@@ -305,6 +305,21 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
         "urgency": meeting_request.get('urgency', 'Medium').lower()
     }
     
+    # Automatically qualify the lead when they schedule a meeting
+    # This is a strong buying signal and should result in a high lead score
+    lead_qualification = calculate_meeting_qualification(meeting_request)
+    
+    # Ensure lead has a qualification before scheduling meeting
+    if not memory_manager.has_qualification(lead_id):
+        # Create initial qualification for new leads
+        memory_manager.save_qualification(lead_id, lead_qualification)
+    else:
+        # Update existing qualification with meeting-based scoring
+        existing_qualification = memory_manager.get_qualification(lead_id)
+        updated_qualification = existing_qualification.copy() if existing_qualification else {}
+        updated_qualification.update(lead_qualification)
+        memory_manager.save_qualification(lead_id, updated_qualification)
+    
     # Generate mock scheduling response
     mock_response = generate_mock_scheduling_response(meeting_request)
     
@@ -331,6 +346,15 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
         context = build_context_from_meeting_request(mock_request_data, memory_manager)
         scheduling_result = analyze_meeting_request(context)
     
+    # Add lead score to scheduling result for display
+    final_qualification = memory_manager.get_qualification(lead_id)
+    if final_qualification:
+        scheduling_result.update({
+            'lead_score': final_qualification.get('lead_score', 0),
+            'priority': final_qualification.get('priority', 'medium'),
+            'reasoning': final_qualification.get('reasoning', 'Meeting scheduled')
+        })
+    
     # Generate calendar invitation
     calendar_invite = generate_calendar_invitation(meeting_request, scheduling_result)
     
@@ -347,6 +371,90 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
         'confirmation_email': confirmation_email,
         'interactions': interactions,
         'timeline': generate_scheduling_timeline(meeting_request, scheduling_result)
+    }
+
+
+def calculate_meeting_qualification(meeting_request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate lead qualification based on meeting scheduling request.
+    Reuses logic from existing qualification functions.
+    """
+    meeting_type = meeting_request.get('meeting_type', 'Product Demo')
+    urgency = meeting_request.get('urgency', 'Medium')
+    company = meeting_request.get('lead_company', 'Unknown Company')
+    role = meeting_request.get('lead_role', 'Unknown Role')
+    
+    # Base score for scheduling a meeting (strong buying signal)
+    base_score = 75
+    
+    # Adjust score based on meeting type
+    meeting_type_scores = {
+        'Product Demo': 85,           # High intent - wants to see the product
+        'Technical Discussion': 90,   # Very high intent - technical evaluation
+        'Pricing Review': 95,         # Highest intent - ready to discuss pricing
+        'Discovery Call': 80,         # Good intent - exploring solutions
+        'Follow-up Meeting': 70       # Medium intent - continuing conversation
+    }
+    
+    lead_score = meeting_type_scores.get(meeting_type, base_score)
+    
+    # Adjust based on urgency
+    urgency_adjustments = {
+        'Urgent': 10,
+        'High': 5,
+        'Medium': 0,
+        'Low': -5
+    }
+    
+    lead_score += urgency_adjustments.get(urgency, 0)
+    
+    # Determine priority based on final score
+    if lead_score >= 90:
+        priority = "high"
+    elif lead_score >= 75:
+        priority = "medium"
+    else:
+        priority = "low"
+    
+    # Generate reasoning based on meeting details
+    reasoning_parts = [
+        f"Lead from {company} has scheduled a {meeting_type.lower()}",
+        f"with {urgency.lower()} urgency priority.",
+        "Meeting scheduling indicates strong buying intent and active evaluation process.",
+        f"Role: {role} suggests decision-making capability."
+    ]
+    
+    if meeting_type == 'Pricing Review':
+        reasoning_parts.append("Pricing discussion indicates readiness to purchase.")
+    elif meeting_type == 'Technical Discussion':
+        reasoning_parts.append("Technical evaluation suggests serious consideration.")
+    elif meeting_type == 'Product Demo':
+        reasoning_parts.append("Demo request shows active interest in solution capabilities.")
+    
+    reasoning = " ".join(reasoning_parts)
+    
+    # Determine next action
+    next_action_map = {
+        'Product Demo': f"Conduct {meeting_type.lower()} and showcase key features relevant to {company}",
+        'Technical Discussion': f"Prepare technical documentation and conduct {meeting_type.lower()}",
+        'Pricing Review': f"Present pricing options and negotiate terms during {meeting_type.lower()}",
+        'Discovery Call': f"Conduct discovery session to understand {company}'s specific needs",
+        'Follow-up Meeting': "Continue conversation and address any remaining questions"
+    }
+    
+    next_action = next_action_map.get(meeting_type, f"Conduct {meeting_type.lower()} as scheduled")
+    
+    # Ensure score is within valid range
+    lead_score = max(0, min(100, lead_score))
+    
+    return {
+        "priority": priority,
+        "lead_score": lead_score,
+        "reasoning": reasoning,
+        "next_action": next_action,
+        "lead_disposition": "meeting_scheduled",
+        "sentiment": "positive",
+        "urgency": urgency.lower()
     }
 
 
@@ -640,7 +748,9 @@ def display_meeting_results(lead_id: str, meeting_request: Dict[str, Any], resul
     crm_data.update({
         'next_action': f"Attend {meeting_request.get('meeting_type', 'meeting')} on {scheduling_result.get('suggested_time', 'TBD')}",
         'lead_disposition': 'meeting_scheduled',
-        'priority': scheduling_result.get('priority', 'medium')
+        'priority': scheduling_result.get('priority', 'medium'),
+        'lead_score': scheduling_result.get('lead_score', 0),
+        'reasoning': scheduling_result.get('reasoning', 'Meeting scheduled - strong buying signal')
     })
     
     display_crm_record(lead_data, crm_data, interactions, title="Updated Lead Record")

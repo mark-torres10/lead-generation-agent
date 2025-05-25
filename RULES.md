@@ -52,3 +52,7 @@
 - **Graceful Degradation**: System should degrade gracefully under load
 - **Health Checks**: Implement comprehensive health check endpoints
 - **Metrics Collection**: Instrument critical code paths with metrics
+
+## Debugging
+
+- **Evaluate current behaviors**: Evaluate the current behaviors. Note one by one each observed behavior and if it is intended or not. Make a note of what results are incorrect and what the intended results are. Then, for the incorrect results, make an action plan of how to fix those results and include what the expected results should look like instead.
