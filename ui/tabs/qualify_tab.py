@@ -23,33 +23,23 @@ def render_qualify_tab():
     and generates a personalized follow-up email with CRM updates.
     """)
     
+    # Initialize sample data in session state if not exists
+    if 'qualify_sample_data' not in st.session_state:
+        st.session_state.qualify_sample_data = {}
+    
     # Create two columns for layout
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("🎛️ Simulated Contact Us Form")
         
-        # Contact form
-        with st.form("contact_form"):
-            name = st.text_input("Full Name", placeholder="e.g., Alice Johnson")
-            email = st.text_input("Email Address", placeholder="e.g., alice@acmecorp.com")
-            company = st.text_input("Company", placeholder="e.g., Acme Corp")
-            role = st.text_input("Job Title", placeholder="e.g., VP of Sales")
-            message = st.text_area(
-                "Message", 
-                height=100,
-                placeholder="Tell us about your needs..."
-            )
-            
-            submitted = st.form_submit_button("📤 Submit Contact Form", type="primary")
-        
-        # Sample data buttons
+        # Sample data buttons (outside form)
         st.markdown("**Quick Fill Options:**")
         col_a, col_b = st.columns(2)
         
         with col_a:
             if st.button("🏢 Enterprise Lead"):
-                st.session_state.sample_data = {
+                st.session_state.qualify_sample_data = {
                     "name": "Sarah Chen",
                     "email": "sarah.chen@techcorp.com",
                     "company": "TechCorp Industries",
@@ -60,7 +50,7 @@ def render_qualify_tab():
         
         with col_b:
             if st.button("🏪 SMB Lead"):
-                st.session_state.sample_data = {
+                st.session_state.qualify_sample_data = {
                     "name": "Mike Rodriguez",
                     "email": "mike@localservices.com",
                     "company": "Local Services LLC",
@@ -69,15 +59,39 @@ def render_qualify_tab():
                 }
                 st.rerun()
         
-        # Auto-fill if sample data exists
-        if hasattr(st.session_state, 'sample_data') and st.session_state.sample_data:
-            sample = st.session_state.sample_data
-            if not submitted:  # Only auto-fill if form hasn't been submitted
-                name = sample.get("name", name)
-                email = sample.get("email", email)
-                company = sample.get("company", company)
-                role = sample.get("role", role)
-                message = sample.get("message", message)
+        # Get current values (either from sample data or empty)
+        current_data = st.session_state.qualify_sample_data
+        
+        # Contact form with pre-filled values
+        with st.form("contact_form"):
+            name = st.text_input(
+                "Full Name", 
+                value=current_data.get("name", ""),
+                placeholder="e.g., Alice Johnson"
+            )
+            email = st.text_input(
+                "Email Address", 
+                value=current_data.get("email", ""),
+                placeholder="e.g., alice@acmecorp.com"
+            )
+            company = st.text_input(
+                "Company", 
+                value=current_data.get("company", ""),
+                placeholder="e.g., Acme Corp"
+            )
+            role = st.text_input(
+                "Job Title", 
+                value=current_data.get("role", ""),
+                placeholder="e.g., VP of Sales"
+            )
+            message = st.text_area(
+                "Message", 
+                value=current_data.get("message", ""),
+                height=100,
+                placeholder="Tell us about your needs..."
+            )
+            
+            submitted = st.form_submit_button("📤 Submit Contact Form", type="primary")
     
     with col2:
         st.subheader("ℹ️ What This Demo Shows")
@@ -98,9 +112,8 @@ def render_qualify_tab():
     
     # Process form submission
     if submitted and name and email and message:
-        # Clear any previous sample data
-        if hasattr(st.session_state, 'sample_data'):
-            del st.session_state.sample_data
+        # Clear sample data after submission
+        st.session_state.qualify_sample_data = {}
         
         # Create form data
         form_data = {

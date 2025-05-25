@@ -239,10 +239,25 @@ def analyze_reply_intent(context):
         for key, value in analysis_result.items():
             print(f"   {key}: {value}")
         
+        # Calculate lead score based on disposition and confidence
+        lead_score = calculate_lead_score_from_reply(analysis_result)
+        
+        # Determine priority based on disposition and urgency
+        priority = determine_priority_from_analysis(analysis_result)
+        
         # Update qualification in memory with reply analysis
         lead_id = context.get("lead_id")
         if lead_id:
+            # Get existing qualification to preserve required fields
+            existing_qualification = memory_manager.get_qualification(lead_id)
+            
             qualification_update = {
+                # Required fields (preserve existing or set defaults)
+                "priority": priority,
+                "lead_score": lead_score,
+                "reasoning": analysis_result["reasoning"],
+                "next_action": analysis_result["next_action"],
+                # Reply analysis specific fields
                 "lead_disposition": analysis_result["disposition"],
                 "disposition_confidence": analysis_result["confidence"],
                 "sentiment": analysis_result["sentiment"],
@@ -251,7 +266,19 @@ def analyze_reply_intent(context):
                 "recommended_follow_up": analysis_result["next_action"],
                 "follow_up_timing": analysis_result["follow_up_timing"]
             }
+            
+            # If there's an existing qualification, preserve some fields
+            if existing_qualification:
+                # Keep the original reasoning if it exists, append reply analysis
+                original_reasoning = existing_qualification.get("reasoning", "")
+                if original_reasoning and original_reasoning != analysis_result["reasoning"]:
+                    qualification_update["reasoning"] = f"{original_reasoning}\n\nReply Analysis: {analysis_result['reasoning']}"
+            
             memory_manager.save_qualification(lead_id, qualification_update)
+        
+        # Add lead_score to analysis result for UI display
+        analysis_result["lead_score"] = lead_score
+        analysis_result["priority"] = priority
         
         return analysis_result
         
@@ -265,8 +292,61 @@ def analyze_reply_intent(context):
             "urgency": "medium", 
             "reasoning": f"Analysis failed: {str(e)}",
             "next_action": "Manual review required",
-            "follow_up_timing": "1-week"
+            "follow_up_timing": "1-week",
+            "lead_score": 50,
+            "priority": "medium"
         }
+
+def calculate_lead_score_from_reply(analysis_result):
+    """Calculate lead score based on reply analysis results."""
+    base_score = analysis_result.get("confidence", 50)
+    disposition = analysis_result.get("disposition", "maybe")
+    sentiment = analysis_result.get("sentiment", "neutral")
+    urgency = analysis_result.get("urgency", "medium")
+    
+    # Adjust score based on disposition
+    if disposition == "engaged":
+        score_multiplier = 1.0
+    elif disposition == "maybe":
+        score_multiplier = 0.8
+    else:  # disinterested
+        score_multiplier = 0.4
+    
+    # Adjust for sentiment
+    sentiment_bonus = 0
+    if sentiment == "positive":
+        sentiment_bonus = 10
+    elif sentiment == "negative":
+        sentiment_bonus = -15
+    
+    # Adjust for urgency
+    urgency_bonus = 0
+    if urgency == "high":
+        urgency_bonus = 5
+    elif urgency == "low":
+        urgency_bonus = -5
+    
+    final_score = int((base_score * score_multiplier) + sentiment_bonus + urgency_bonus)
+    
+    # Ensure score is within valid range
+    return max(0, min(100, final_score))
+
+def determine_priority_from_analysis(analysis_result):
+    """Determine lead priority based on analysis results."""
+    disposition = analysis_result.get("disposition", "maybe")
+    confidence = analysis_result.get("confidence", 50)
+    urgency = analysis_result.get("urgency", "medium")
+    
+    # High priority: engaged disposition with high confidence or high urgency
+    if disposition == "engaged" and (confidence >= 80 or urgency == "high"):
+        return "high"
+    
+    # Low priority: disinterested or very low confidence
+    if disposition == "disinterested" or confidence < 30:
+        return "low"
+    
+    # Medium priority: everything else
+    return "medium"
 
 def update_crm_with_disposition(lead_id, analysis_result):
     """Update CRM and memory with reply analysis results."""

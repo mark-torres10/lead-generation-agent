@@ -23,22 +23,42 @@ def render_reply_tab():
     and generates appropriate follow-up responses.
     """)
     
+    # Initialize sample data in session state if not exists
+    if 'reply_sample_data' not in st.session_state:
+        st.session_state.reply_sample_data = {}
+    
     # Create two columns for layout
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("📨 Customer Reply Simulation")
         
+        # Get current values (either from sample data or defaults)
+        current_data = st.session_state.reply_sample_data
+        
         # Lead context
         st.markdown("**Lead Context:**")
-        lead_name = st.text_input("Lead Name", value="Sarah Chen", placeholder="e.g., John Smith")
-        lead_email = st.text_input("Lead Email", value="sarah.chen@techcorp.com", placeholder="e.g., john@company.com")
-        lead_company = st.text_input("Company", value="TechCorp Industries", placeholder="e.g., Acme Corp")
+        lead_name = st.text_input(
+            "Lead Name", 
+            value=current_data.get("lead_name", "Sarah Chen"), 
+            placeholder="e.g., John Smith"
+        )
+        lead_email = st.text_input(
+            "Lead Email", 
+            value=current_data.get("lead_email", "sarah.chen@techcorp.com"), 
+            placeholder="e.g., john@company.com"
+        )
+        lead_company = st.text_input(
+            "Company", 
+            value=current_data.get("lead_company", "TechCorp Industries"), 
+            placeholder="e.g., Acme Corp"
+        )
         
         # Reply content
         st.markdown("**Customer Reply:**")
         reply_content = st.text_area(
             "Reply Content",
+            value=current_data.get("reply_content", ""),
             height=150,
             placeholder="Enter the customer's reply here..."
         )
@@ -49,7 +69,11 @@ def render_reply_tab():
         col_a, col_b = st.columns(2)
         with col_a:
             if st.button("✅ Interested Reply"):
-                st.session_state.sample_reply = """Hi Alex,
+                st.session_state.reply_sample_data = {
+                    "lead_name": "Sarah Chen",
+                    "lead_email": "sarah.chen@techcorp.com",
+                    "lead_company": "TechCorp Industries",
+                    "reply_content": """Hi Alex,
 
 Thanks for reaching out! Your automation platform sounds exactly like what we need. We've been struggling with manual lead management and it's becoming a real bottleneck.
 
@@ -59,10 +83,15 @@ Looking forward to hearing from you.
 
 Best,
 Sarah"""
+                }
                 st.rerun()
             
             if st.button("❓ Info Request"):
-                st.session_state.sample_reply = """Hi Alex,
+                st.session_state.reply_sample_data = {
+                    "lead_name": "Sarah Chen",
+                    "lead_email": "sarah.chen@techcorp.com",
+                    "lead_company": "TechCorp Industries",
+                    "reply_content": """Hi Alex,
 
 Thanks for your email. The automation platform sounds interesting, but I need to understand more about the technical requirements and pricing.
 
@@ -76,11 +105,16 @@ I'll need to review this with our IT team before we can move forward.
 
 Thanks,
 Sarah"""
+                }
                 st.rerun()
         
         with col_b:
             if st.button("📅 Meeting Request"):
-                st.session_state.sample_reply = """Hi Alex,
+                st.session_state.reply_sample_data = {
+                    "lead_name": "Sarah Chen",
+                    "lead_email": "sarah.chen@techcorp.com",
+                    "lead_company": "TechCorp Industries",
+                    "reply_content": """Hi Alex,
 
 Perfect timing! We're actually in the middle of evaluating automation solutions for Q1 implementation.
 
@@ -91,10 +125,15 @@ What's your availability Tuesday-Thursday between 2-4 PM EST?
 Best regards,
 Sarah Chen
 CTO, TechCorp Industries"""
+                }
                 st.rerun()
             
             if st.button("🚫 Not Interested"):
-                st.session_state.sample_reply = """Hi Alex,
+                st.session_state.reply_sample_data = {
+                    "lead_name": "Sarah Chen",
+                    "lead_email": "sarah.chen@techcorp.com",
+                    "lead_company": "TechCorp Industries",
+                    "reply_content": """Hi Alex,
 
 Thank you for reaching out, but we're not looking for automation solutions at this time. We've recently implemented a new system and won't be making any changes for the foreseeable future.
 
@@ -102,11 +141,8 @@ Please remove me from your mailing list.
 
 Thanks,
 Sarah"""
+                }
                 st.rerun()
-        
-        # Auto-fill if sample reply exists
-        if hasattr(st.session_state, 'sample_reply') and st.session_state.sample_reply:
-            reply_content = st.session_state.sample_reply
         
         # Submit button
         submitted = st.button("🔍 Analyze Reply", type="primary")
@@ -132,9 +168,8 @@ Sarah"""
     
     # Process reply analysis
     if submitted and reply_content and lead_name and lead_email:
-        # Clear sample reply
-        if hasattr(st.session_state, 'sample_reply'):
-            del st.session_state.sample_reply
+        # Clear sample data after submission
+        st.session_state.reply_sample_data = {}
         
         # Create lead data
         lead_data = {
@@ -187,24 +222,58 @@ def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_c
     memory_manager = get_memory_manager()
     
     # Import the reply analysis function
-    from experiments.run_reply_intent import analyze_reply_intent
+    from experiments.run_reply_intent import analyze_reply_intent, build_context_from_reply
+    
+    # Create reply data structure that matches what the experiments module expects
+    reply_data = {
+        "reply_subject": "Re: Automation Platform Inquiry",
+        "reply_text": reply_content,
+        "timestamp": "2024-01-10 11:15:00"
+    }
     
     # Determine intent based on reply content (for demo purposes)
     intent_category = determine_demo_intent(reply_content)
     
-    # Mock the LLM response based on intent
+    # Generate mock scheduling response
     mock_response = generate_mock_intent_response(intent_category, reply_content, lead_data)
     
     # Patch the LLM chain to return our mock response
-    with patch('experiments.run_reply_intent.get_intent_analysis_chain') as mock_chain, \
+    with patch('experiments.run_reply_intent.get_llm_chain_for_reply_analysis') as mock_chain, \
          patch('experiments.run_reply_intent.memory_manager', memory_manager):
         
+        # Add lead to mock CRM so build_context_from_reply can find it
+        from experiments.run_reply_intent import mock_crm
+        mock_crm[lead_id] = {
+            "id": lead_id,
+            "name": lead_data["name"],
+            "company": lead_data["company"],
+            "email": lead_data["email"],
+            "status": "contacted",
+            "interest": "Automation platform inquiry",
+            "lead_disposition": None,
+            "last_contact": "2024-01-10",
+            "interaction_history": []
+        }
+        
+        # Ensure lead has a basic qualification to prevent NOT NULL constraint errors
+        if not memory_manager.has_qualification(lead_id):
+            initial_qualification = {
+                "priority": "medium",
+                "lead_score": 50,
+                "reasoning": "Initial contact - automation platform inquiry",
+                "next_action": "Analyze reply and determine next steps"
+            }
+            memory_manager.save_qualification(lead_id, initial_qualification)
+        
         mock_llm = Mock()
-        mock_llm.run.return_value = mock_response
+        mock_llm.invoke.return_value = {"text": mock_response}
         mock_chain.return_value = mock_llm
         
-        # Run the actual analysis
-        analysis = analyze_reply_intent(lead_id, lead_data, reply_content)
+        # Build context using the experiments module function
+        context = build_context_from_reply(lead_id, reply_data)
+        
+        # Run the actual analysis with the correct parameter
+        analysis = analyze_reply_intent(context)
     
     # Generate response email
     response_email = generate_response_email(lead_data, reply_content, analysis)
@@ -271,6 +340,15 @@ def generate_mock_intent_response(intent_category: str, reply_content: str, lead
         'not_interested': 'negative'
     }
     
+    urgency_levels = {
+        'interested': 'high',
+        'meeting_request': 'high',
+        'info_request': 'medium',
+        'neutral': 'medium',
+        'objection': 'low',
+        'not_interested': 'low'
+    }
+    
     next_actions = {
         'interested': 'Schedule demo call and send case study',
         'meeting_request': 'Coordinate meeting scheduling with calendar availability',
@@ -280,20 +358,53 @@ def generate_mock_intent_response(intent_category: str, reply_content: str, lead
         'not_interested': 'Respect decision and add to nurture campaign'
     }
     
+    follow_up_timings = {
+        'interested': 'immediate',
+        'meeting_request': 'immediate',
+        'info_request': '1-week',
+        'neutral': '1-week',
+        'objection': '1-month',
+        'not_interested': '3-months'
+    }
+    
+    # Map intent categories to disposition values expected by parser
+    disposition_mapping = {
+        'interested': 'engaged',
+        'meeting_request': 'engaged',
+        'info_request': 'maybe',
+        'neutral': 'maybe',
+        'objection': 'disinterested',
+        'not_interested': 'disinterested'
+    }
+    
     score = intent_scores.get(intent_category, 50)
     engagement = engagement_levels.get(intent_category, 'medium')
     sentiment = sentiments.get(intent_category, 'neutral')
+    urgency = urgency_levels.get(intent_category, 'medium')
     next_action = next_actions.get(intent_category, 'Follow up appropriately')
+    follow_up_timing = follow_up_timings.get(intent_category, '1-week')
+    disposition = disposition_mapping.get(intent_category, 'maybe')
     
-    return f"""
-    Intent: {intent_category}
-    Confidence: {score}
-    Engagement Level: {engagement}
-    Sentiment: {sentiment}
-    Urgency: medium
-    Next Action: {next_action}
-    Key Points: Customer from {lead_data.get('company', 'company')} showing {engagement} engagement with {sentiment} sentiment
-    """
+    # Generate reasoning based on the reply content and intent
+    reasoning_templates = {
+        'interested': f"Customer from {lead_data.get('company', 'company')} explicitly expresses strong interest in the solution. Reply content shows clear buying signals and {engagement} engagement.",
+        'meeting_request': f"Customer from {lead_data.get('company', 'company')} is actively requesting a meeting or demo, indicating {engagement} intent to move forward in the sales process.",
+        'info_request': f"Customer from {lead_data.get('company', 'company')} is seeking additional information, showing {engagement} interest but needs more details before proceeding.",
+        'neutral': f"Customer from {lead_data.get('company', 'company')} provides a neutral response with {engagement} engagement without clear buying signals or strong objections.",
+        'objection': f"Customer from {lead_data.get('company', 'company')} raises concerns or objections that need to be addressed before moving forward, showing {engagement} engagement.",
+        'not_interested': f"Customer from {lead_data.get('company', 'company')} clearly indicates lack of interest with {engagement} engagement and requests to be removed from follow-up."
+    }
+    
+    reasoning = reasoning_templates.get(intent_category, f"Standard analysis for {intent_category} intent category.")
+    
+    # Format response to match what parse_reply_analysis_response expects
+    return f"""DISPOSITION: {disposition}
+CONFIDENCE: {score}
+SENTIMENT: {sentiment}
+URGENCY: {urgency}
+REASONING: {reasoning}
+NEXT_ACTION: {next_action}
+FOLLOW_UP_TIMING: {follow_up_timing}"""
 
 
 def generate_response_email(lead_data: Dict[str, Any], reply_content: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -301,9 +412,9 @@ def generate_response_email(lead_data: Dict[str, Any], reply_content: str, analy
     
     name = lead_data.get('name', 'there')
     company = lead_data.get('company', 'your company')
-    intent = analysis.get('intent', 'neutral')
+    disposition = analysis.get('disposition', 'maybe')  # Use disposition instead of intent
     
-    if intent == 'interested':
+    if disposition == 'engaged':
         subject = f"Next steps for {company}'s automation project"
         body = f"""Hi {name},
 
@@ -324,9 +435,29 @@ Best regards,
 Alex Thompson
 Senior Solutions Consultant"""
 
-    elif intent == 'meeting_request':
-        subject = f"Demo scheduling for {company}"
-        body = f"""Hi {name},
+    elif disposition == 'maybe':
+        # Check if it's an info request based on next_action
+        next_action = analysis.get('next_action', '').lower()
+        if 'information' in next_action or 'details' in next_action:
+            subject = f"Detailed information for {company}"
+            body = f"""Hi {name},
+
+Thank you for your interest! I've attached the information you requested:
+
+📋 **Detailed Feature List**: Complete breakdown of automation capabilities
+🔧 **Integration Requirements**: Technical specs and system compatibility  
+💰 **Pricing Information**: Transparent pricing tiers and ROI calculator
+📅 **Implementation Timeline**: Typical 30-60 day deployment process
+
+I understand you'll need to review this with your IT team. I'm happy to join a technical call to answer any questions they might have about integration or security requirements.
+
+Would it be helpful if I scheduled a brief technical overview call for next week?
+
+Best regards,
+Alex Thompson"""
+        elif 'meeting' in next_action.lower() or 'demo' in next_action.lower():
+            subject = f"Demo scheduling for {company}"
+            body = f"""Hi {name},
 
 Perfect! I'd be happy to set up a demo for your team.
 
@@ -346,26 +477,25 @@ Please let me know which works best, and I'll send calendar invites to all atten
 
 Best regards,
 Alex Thompson"""
+        else:
+            # General nurture approach
+            subject = f"Solutions for {company}'s automation needs"
+            body = f"""Hi {name},
 
-    elif intent == 'info_request':
-        subject = f"Detailed information for {company}"
-        body = f"""Hi {name},
+Thanks for your interest in our automation solutions. I appreciate you taking the time to reach out.
 
-Thank you for your interest! I've attached the information you requested:
+Based on your message, it sounds like {company} could benefit from streamlining your current processes. Our platform helps companies like yours automate repetitive tasks and improve efficiency.
 
-📋 **Detailed Feature List**: Complete breakdown of automation capabilities
-🔧 **Integration Requirements**: Technical specs and system compatibility  
-💰 **Pricing Information**: Transparent pricing tiers and ROI calculator
-📅 **Implementation Timeline**: Typical 30-60 day deployment process
+I'd be happy to schedule a brief call to learn more about your specific needs and show you how our solution might help.
 
-I understand you'll need to review this with your IT team. I'm happy to join a technical call to answer any questions they might have about integration or security requirements.
-
-Would it be helpful if I scheduled a brief technical overview call for next week?
+Would you prefer a quick 15-minute call or would you like me to send some information first?
 
 Best regards,
-Alex Thompson"""
+Alex Thompson
+Solutions Consultant
+sales@yourcompany.com"""
 
-    elif intent == 'not_interested':
+    else:  # disinterested
         subject = "Thank you for your time"
         body = f"""Hi {name},
 
@@ -380,19 +510,6 @@ Wishing you and {company} continued success!
 Best regards,
 Alex Thompson"""
 
-    else:  # objection or neutral
-        subject = "Addressing your questions about automation"
-        body = f"""Hi {name},
-
-Thank you for your thoughtful reply. I understand you may have some questions or concerns about implementing automation at {company}.
-
-Many of our clients had similar considerations initially. I'd be happy to address any specific concerns you might have and share how other companies in your situation have successfully navigated the transition.
-
-Would a brief 15-minute call be helpful to discuss your specific situation? No pressure - just an opportunity to provide clarity.
-
-Best regards,
-Alex Thompson"""
-
     return {
         'subject': subject,
         'body': body,
@@ -400,10 +517,10 @@ Alex Thompson"""
         'from': 'sales@yourcompany.com',
         'metadata': {
             'generated_at': '2024-01-10 11:15:00',
-            'intent': intent,
+            'disposition': disposition,
             'confidence': analysis.get('confidence', 50),
             'tone': 'professional',
-            'template_used': f'reply_{intent}'
+            'template_used': f'reply_{disposition}'
         }
     }
 
@@ -411,7 +528,7 @@ Alex Thompson"""
 def generate_reply_timeline(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate a timeline of agent actions for reply analysis."""
     
-    intent = analysis.get('intent', 'neutral')
+    disposition = analysis.get('disposition', 'maybe')
     confidence = analysis.get('confidence', 50)
     
     return [
@@ -422,7 +539,7 @@ def generate_reply_timeline(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         },
         {
             "action": "Analyze Intent",
-            "details": f"Identified intent as '{intent}' with {confidence}% confidence",
+            "details": f"Identified disposition as '{disposition}' with {confidence}% confidence",
             "duration": "1.2s"
         },
         {
@@ -431,13 +548,18 @@ def generate_reply_timeline(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
             "duration": "0.8s"
         },
         {
-            "action": "Evaluate Engagement",
-            "details": f"Engagement level: {analysis.get('engagement_level', 'medium')}",
+            "action": "Evaluate Urgency",
+            "details": f"Urgency level: {analysis.get('urgency', 'medium')}",
             "duration": "0.5s"
         },
         {
+            "action": "Calculate Lead Score",
+            "details": f"Updated lead score to {analysis.get('lead_score', 50)}/100 based on analysis",
+            "duration": "0.4s"
+        },
+        {
             "action": "Generate Response Strategy",
-            "details": f"Selected appropriate response approach for {intent} intent",
+            "details": f"Selected appropriate response approach for {disposition} disposition",
             "duration": "0.7s"
         },
         {

@@ -24,39 +24,80 @@ def render_meeting_tab():
     and sends calendar invitations with meeting details.
     """)
     
+    # Initialize sample data in session state if not exists
+    if 'meeting_sample_data' not in st.session_state:
+        st.session_state.meeting_sample_data = {}
+    
     # Create two columns for layout
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("📅 Meeting Request Simulation")
         
+        # Get current values (either from sample data or defaults)
+        current_data = st.session_state.meeting_sample_data
+        
         # Lead context
         st.markdown("**Lead Information:**")
-        lead_name = st.text_input("Lead Name", value="David Kim", placeholder="e.g., John Smith")
-        lead_email = st.text_input("Lead Email", value="david.kim@innovatetech.com", placeholder="e.g., john@company.com")
-        lead_company = st.text_input("Company", value="InnovateTech Solutions", placeholder="e.g., Acme Corp")
-        lead_role = st.text_input("Role", value="VP of Operations", placeholder="e.g., CEO")
+        lead_name = st.text_input(
+            "Lead Name", 
+            value=current_data.get("lead_name", "David Kim"), 
+            placeholder="e.g., John Smith"
+        )
+        lead_email = st.text_input(
+            "Lead Email", 
+            value=current_data.get("lead_email", "david.kim@innovatetech.com"), 
+            placeholder="e.g., john@company.com"
+        )
+        lead_company = st.text_input(
+            "Company", 
+            value=current_data.get("lead_company", "InnovateTech Solutions"), 
+            placeholder="e.g., Acme Corp"
+        )
+        lead_role = st.text_input(
+            "Role", 
+            value=current_data.get("lead_role", "VP of Operations"), 
+            placeholder="e.g., CEO"
+        )
         
         # Meeting request details
         st.markdown("**Meeting Request:**")
+        
+        # Get the index for selectbox values
+        meeting_types = ["Product Demo", "Discovery Call", "Technical Discussion", "Pricing Review", "Follow-up Meeting"]
+        durations = ["15 minutes", "30 minutes", "45 minutes", "60 minutes"]
+        urgencies = ["Low", "Medium", "High", "Urgent"]
+        
+        current_meeting_type = current_data.get("meeting_type", "Product Demo")
+        current_duration = current_data.get("duration", "30 minutes")
+        current_urgency = current_data.get("urgency", "Medium")
+        
+        meeting_type_index = meeting_types.index(current_meeting_type) if current_meeting_type in meeting_types else 0
+        duration_index = durations.index(current_duration) if current_duration in durations else 1
+        urgency_index = urgencies.index(current_urgency) if current_urgency in urgencies else 1
+        
         meeting_type = st.selectbox(
             "Meeting Type",
-            ["Product Demo", "Discovery Call", "Technical Discussion", "Pricing Review", "Follow-up Meeting"]
+            meeting_types,
+            index=meeting_type_index
         )
         
         duration = st.selectbox(
             "Duration",
-            ["15 minutes", "30 minutes", "45 minutes", "60 minutes"]
+            durations,
+            index=duration_index
         )
         
         urgency = st.selectbox(
             "Urgency",
-            ["Low", "Medium", "High", "Urgent"]
+            urgencies,
+            index=urgency_index
         )
         
         # Additional attendees
         attendees = st.text_area(
             "Additional Attendees (optional)",
+            value=current_data.get("attendees", ""),
             placeholder="e.g., CTO John Doe (john@company.com), Sales Director Jane Smith (jane@company.com)",
             height=80
         )
@@ -64,6 +105,7 @@ def render_meeting_tab():
         # Meeting notes/context
         meeting_context = st.text_area(
             "Meeting Context/Notes",
+            value=current_data.get("context", ""),
             height=120,
             placeholder="Any specific topics, requirements, or context for the meeting..."
         )
@@ -74,7 +116,11 @@ def render_meeting_tab():
         
         with col_a:
             if st.button("🚀 Product Demo"):
-                st.session_state.meeting_scenario = {
+                st.session_state.meeting_sample_data = {
+                    "lead_name": "David Kim",
+                    "lead_email": "david.kim@innovatetech.com",
+                    "lead_company": "InnovateTech Solutions",
+                    "lead_role": "VP of Operations",
                     "meeting_type": "Product Demo",
                     "duration": "30 minutes",
                     "urgency": "Medium",
@@ -84,7 +130,11 @@ def render_meeting_tab():
                 st.rerun()
             
             if st.button("🔧 Technical Discussion"):
-                st.session_state.meeting_scenario = {
+                st.session_state.meeting_sample_data = {
+                    "lead_name": "David Kim",
+                    "lead_email": "david.kim@innovatetech.com",
+                    "lead_company": "InnovateTech Solutions",
+                    "lead_role": "VP of Operations",
                     "meeting_type": "Technical Discussion",
                     "duration": "45 minutes",
                     "urgency": "High",
@@ -95,7 +145,11 @@ def render_meeting_tab():
         
         with col_b:
             if st.button("💰 Pricing Review"):
-                st.session_state.meeting_scenario = {
+                st.session_state.meeting_sample_data = {
+                    "lead_name": "David Kim",
+                    "lead_email": "david.kim@innovatetech.com",
+                    "lead_company": "InnovateTech Solutions",
+                    "lead_role": "VP of Operations",
                     "meeting_type": "Pricing Review",
                     "duration": "30 minutes",
                     "urgency": "Medium",
@@ -105,7 +159,11 @@ def render_meeting_tab():
                 st.rerun()
             
             if st.button("⚡ Urgent Follow-up"):
-                st.session_state.meeting_scenario = {
+                st.session_state.meeting_sample_data = {
+                    "lead_name": "David Kim",
+                    "lead_email": "david.kim@innovatetech.com",
+                    "lead_company": "InnovateTech Solutions",
+                    "lead_role": "VP of Operations",
                     "meeting_type": "Follow-up Meeting",
                     "duration": "15 minutes",
                     "urgency": "Urgent",
@@ -113,15 +171,6 @@ def render_meeting_tab():
                     "context": "Quick follow-up needed to address concerns raised by the board. Need immediate clarification on data security and compliance features."
                 }
                 st.rerun()
-        
-        # Auto-fill if scenario exists
-        if hasattr(st.session_state, 'meeting_scenario') and st.session_state.meeting_scenario:
-            scenario = st.session_state.meeting_scenario
-            meeting_type = scenario.get("meeting_type", meeting_type)
-            duration = scenario.get("duration", duration)
-            urgency = scenario.get("urgency", urgency)
-            attendees = scenario.get("attendees", attendees)
-            meeting_context = scenario.get("context", meeting_context)
         
         # Submit button
         submitted = st.button("📅 Schedule Meeting", type="primary")
@@ -152,9 +201,8 @@ def render_meeting_tab():
     
     # Process meeting scheduling
     if submitted and lead_name and lead_email and meeting_type:
-        # Clear scenario
-        if hasattr(st.session_state, 'meeting_scenario'):
-            del st.session_state.meeting_scenario
+        # Clear sample data after submission
+        st.session_state.meeting_sample_data = {}
         
         # Create meeting request data
         meeting_request = {
@@ -246,21 +294,42 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
     memory_manager = get_memory_manager()
     
     # Import the scheduling function
-    from experiments.run_schedule_meeting import schedule_meeting
+    from experiments.run_schedule_meeting import analyze_meeting_request, build_context_from_meeting_request
+    
+    # Create a mock request data structure that matches what the experiments module expects
+    mock_request_data = {
+        "lead_id": lead_id,
+        "request_id": f"ui_meeting_{lead_id}",
+        "message": f"Meeting request: {meeting_request.get('meeting_type', 'Meeting')} for {meeting_request.get('duration', '30 minutes')}. Urgency: {meeting_request.get('urgency', 'Medium')}",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "urgency": meeting_request.get('urgency', 'Medium').lower()
+    }
     
     # Generate mock scheduling response
     mock_response = generate_mock_scheduling_response(meeting_request)
     
     # Patch the LLM chain to return our mock response
-    with patch('experiments.run_schedule_meeting.get_llm_chain') as mock_chain, \
+    with patch('experiments.run_schedule_meeting.get_llm_chain_for_meeting_scheduling') as mock_chain, \
          patch('experiments.run_schedule_meeting.memory_manager', memory_manager):
+        
+        # Add lead to mock CRM so build_context_from_meeting_request can find it
+        from experiments.run_schedule_meeting import mock_crm_data
+        mock_crm_data[lead_id] = {
+            "name": meeting_request["lead_name"],
+            "company": meeting_request["lead_company"],
+            "email": meeting_request["lead_email"],
+            "status": "qualified",
+            "meeting_status": "none",
+            "last_interaction": "2024-01-10 12:00:00"
+        }
         
         mock_llm = Mock()
         mock_llm.run.return_value = mock_response
         mock_chain.return_value = mock_llm
         
-        # Run the actual scheduling
-        scheduling_result = schedule_meeting(lead_id, meeting_request)
+        # Build context and analyze the meeting request
+        context = build_context_from_meeting_request(mock_request_data, memory_manager)
+        scheduling_result = analyze_meeting_request(context)
     
     # Generate calendar invitation
     calendar_invite = generate_calendar_invitation(meeting_request, scheduling_result)
