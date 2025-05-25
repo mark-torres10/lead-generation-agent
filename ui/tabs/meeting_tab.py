@@ -42,22 +42,26 @@ def render_meeting_tab():
         lead_name = st.text_input(
             "Lead Name", 
             value=current_data.get("lead_name", "David Kim"), 
-            placeholder="e.g., John Smith"
+            placeholder="e.g., John Smith",
+            key="meeting_lead_name"
         )
         lead_email = st.text_input(
             "Lead Email", 
             value=current_data.get("lead_email", "david.kim@innovatetech.com"), 
-            placeholder="e.g., john@company.com"
+            placeholder="e.g., john@company.com",
+            key="meeting_lead_email"
         )
         lead_company = st.text_input(
             "Company", 
             value=current_data.get("lead_company", "InnovateTech Solutions"), 
-            placeholder="e.g., Acme Corp"
+            placeholder="e.g., Acme Corp",
+            key="meeting_lead_company"
         )
         lead_role = st.text_input(
             "Role", 
             value=current_data.get("lead_role", "VP of Operations"), 
-            placeholder="e.g., CEO"
+            placeholder="e.g., CEO",
+            key="meeting_lead_role"
         )
         
         # Meeting request details
@@ -79,19 +83,22 @@ def render_meeting_tab():
         meeting_type = st.selectbox(
             "Meeting Type",
             meeting_types,
-            index=meeting_type_index
+            index=meeting_type_index,
+            key="meeting_type_select"
         )
         
         duration = st.selectbox(
             "Duration",
             durations,
-            index=duration_index
+            index=duration_index,
+            key="meeting_duration_select"
         )
         
         urgency = st.selectbox(
             "Urgency",
             urgencies,
-            index=urgency_index
+            index=urgency_index,
+            key="meeting_urgency_select"
         )
         
         # Additional attendees
@@ -99,7 +106,8 @@ def render_meeting_tab():
             "Additional Attendees (optional)",
             value=current_data.get("attendees", ""),
             placeholder="e.g., CTO John Doe (john@company.com), Sales Director Jane Smith (jane@company.com)",
-            height=80
+            height=80,
+            key="meeting_attendees_text"
         )
         
         # Meeting notes/context
@@ -107,7 +115,8 @@ def render_meeting_tab():
             "Meeting Context/Notes",
             value=current_data.get("context", ""),
             height=120,
-            placeholder="Any specific topics, requirements, or context for the meeting..."
+            placeholder="Any specific topics, requirements, or context for the meeting...",
+            key="meeting_context_text"
         )
         
         # Sample scenarios
@@ -756,7 +765,7 @@ def display_meeting_results(lead_id: str, meeting_request: Dict[str, Any], resul
     display_crm_record(lead_data, crm_data, interactions, title="Updated Lead Record")
     
     # Clear results button
-    if st.button("🗑️ Clear Results"):
+    if st.button("🗑️ Clear Results", key="meeting_clear_results_btn"):
         if hasattr(st.session_state, 'demo_results') and 'meeting' in st.session_state.demo_results:
             st.session_state.demo_results['meeting'] = {}
         st.rerun() 

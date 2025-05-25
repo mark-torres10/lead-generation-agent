@@ -68,7 +68,7 @@ def render_reply_tab():
         
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("✅ Interested Reply"):
+            if st.button("✅ Interested Reply", key="reply_interested_btn"):
                 st.session_state.reply_sample_data = {
                     "lead_name": "Sarah Chen",
                     "lead_email": "sarah.chen@techcorp.com",
@@ -86,7 +86,7 @@ Sarah"""
                 }
                 st.rerun()
             
-            if st.button("❓ Info Request"):
+            if st.button("❓ Info Request", key="reply_info_request_btn"):
                 st.session_state.reply_sample_data = {
                     "lead_name": "Sarah Chen",
                     "lead_email": "sarah.chen@techcorp.com",
@@ -109,7 +109,7 @@ Sarah"""
                 st.rerun()
         
         with col_b:
-            if st.button("📅 Meeting Request"):
+            if st.button("📅 Meeting Request", key="reply_meeting_request_btn"):
                 st.session_state.reply_sample_data = {
                     "lead_name": "Sarah Chen",
                     "lead_email": "sarah.chen@techcorp.com",
@@ -128,7 +128,7 @@ CTO, TechCorp Industries"""
                 }
                 st.rerun()
             
-            if st.button("🚫 Not Interested"):
+            if st.button("🚫 Not Interested", key="reply_not_interested_btn"):
                 st.session_state.reply_sample_data = {
                     "lead_name": "Sarah Chen",
                     "lead_email": "sarah.chen@techcorp.com",
@@ -145,7 +145,7 @@ Sarah"""
                 st.rerun()
         
         # Submit button
-        submitted = st.button("🔍 Analyze Reply", type="primary")
+        submitted = st.button("🔍 Analyze Reply", type="primary", key="reply_analyze_btn")
     
     with col2:
         st.subheader("ℹ️ What This Demo Shows")
@@ -607,7 +607,7 @@ def display_reply_analysis_results(lead_id: str, lead_data: Dict[str, Any], repl
     display_crm_record(lead_data, analysis, interactions, title="Updated Lead Record")
     
     # Clear results button
-    if st.button("🗑️ Clear Results"):
+    if st.button("🗑️ Clear Results", key="reply_clear_results_btn"):
         if hasattr(st.session_state, 'demo_results') and 'reply' in st.session_state.demo_results:
             st.session_state.demo_results['reply'] = {}
         st.rerun() 

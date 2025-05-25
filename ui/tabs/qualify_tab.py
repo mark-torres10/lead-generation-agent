@@ -23,7 +23,7 @@ def render_qualify_tab():
     and generates a personalized follow-up email with CRM updates.
     """)
     
-    # Initialize sample data in session state if not exists
+     # Initialize sample data in session state if not exists
     if 'qualify_sample_data' not in st.session_state:
         st.session_state.qualify_sample_data = {}
     
@@ -38,7 +38,7 @@ def render_qualify_tab():
         col_a, col_b = st.columns(2)
         
         with col_a:
-            if st.button("🏢 Enterprise Lead"):
+            if st.button("🏢 Enterprise Lead", key="qualify_enterprise_btn"):
                 st.session_state.qualify_sample_data = {
                     "name": "Sarah Chen",
                     "email": "sarah.chen@techcorp.com",
@@ -49,7 +49,7 @@ def render_qualify_tab():
                 st.rerun()
         
         with col_b:
-            if st.button("🏪 SMB Lead"):
+            if st.button("🏪 SMB Lead", key="qualify_smb_btn"):
                 st.session_state.qualify_sample_data = {
                     "name": "Mike Rodriguez",
                     "email": "mike@localservices.com",
@@ -366,7 +366,7 @@ def display_qualification_results(lead_id: str, form_data: Dict[str, Any], resul
         display_crm_record(form_data, qualification, interactions, title="")
     
     # Clear results button
-    if st.button("🗑️ Clear Results"):
+    if st.button("🗑️ Clear Results", key="qualify_clear_results_btn"):
         if hasattr(st.session_state, 'demo_results') and 'qualify' in st.session_state.demo_results:
             st.session_state.demo_results['qualify'] = {}
         st.rerun() 
