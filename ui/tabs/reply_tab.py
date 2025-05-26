@@ -11,7 +11,7 @@ from ui.state.session import get_memory_manager, store_demo_result
 from ui.components.agent_visualizer import display_agent_timeline
 from ui.components.email_display import display_email_output
 from agents.models import ReplyAnalysisResult
-from integrations.email_manager import EmailManager
+from integrations.google.email_manager import EmailManager
 
 
 def render_reply_tab():

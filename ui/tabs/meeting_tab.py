@@ -7,6 +7,10 @@ import streamlit as st
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from unittest.mock import patch, Mock
+from integrations.google.calendar_manager import CalendarManager
+import re
+import random
+from dateutil import tz
 
 from ui.state.session import get_memory_manager, store_demo_result
 from ui.components.agent_visualizer import display_agent_reasoning, display_agent_timeline
@@ -16,6 +20,7 @@ from ui.components.email_display import display_email_output
 
 def render_meeting_tab():
     """Render the meeting scheduling tab."""
+    calendar_manager = CalendarManager()
     
     st.markdown("""
     ### 📅 Meeting Scheduling Demo
@@ -85,13 +90,6 @@ def render_meeting_tab():
             meeting_types,
             index=meeting_type_index,
             key="meeting_type_select"
-        )
-        
-        duration = st.selectbox(
-            "Duration",
-            durations,
-            index=duration_index,
-            key="meeting_duration_select"
         )
         
         urgency = st.selectbox(
@@ -180,9 +178,30 @@ def render_meeting_tab():
                     "context": "Quick follow-up needed to address concerns raised by the board. Need immediate clarification on data security and compliance features."
                 }
                 st.rerun()
-        
-        # Submit button
-        submitted = st.button("📅 Schedule Meeting", type="primary")
+
+        duration = st.selectbox(
+            "Duration",
+            durations,
+            index=duration_index,
+            key="meeting_duration_select"
+        )
+
+        # --- FORM DROPDOWNS (insert above the Schedule Meeting button) ---
+        weekdays = get_next_weekdays(5)
+        weekday_labels = [d.strftime("%A, %b %d") for d in weekdays]
+        selected_day_idx = st.selectbox("Select a day for your meeting", options=list(range(len(weekdays))), format_func=lambda i: weekday_labels[i], key="meeting_day_select")
+        selected_day = weekdays[selected_day_idx]
+        available_slots = get_available_slots_for_day(calendar_manager, selected_day)
+        slot_labels = [f"{slot[0].strftime('%I:%M %p')} - {slot[1].strftime('%I:%M %p')}" for slot in available_slots]
+        slot_options = [i for i in range(len(available_slots))]
+        if slot_options:
+            selected_slot_idx = st.selectbox("Select a time", options=slot_options, format_func=lambda i: slot_labels[i], key="meeting_time_select")
+        else:
+            # Always show the time selectbox, but disabled if no slots
+            selected_slot_idx = st.selectbox("Select a time", options=[-1], format_func=lambda i: "No available slots", key="meeting_time_select", disabled=True)
+            selected_slot_idx = None
+        # Submit button (only enabled if a slot is selected)
+        submitted = st.button("\U0001F4C5 Schedule Meeting", type="primary", disabled=(selected_slot_idx is None or not available_slots))
     
     with col2:
         st.subheader("ℹ️ What This Demo Shows")
@@ -204,12 +223,23 @@ def render_meeting_tab():
         - CRM integration and tracking
         """)
         
-        # Show sample calendar
-        st.markdown("**📅 Sample Calendar Availability:**")
-        display_sample_calendar()
+        # --- SUGGESTED TIMES UI ---
+        st.markdown("**🔎 Suggested Available Times (next 5 business days):**")
+        suggested_slots = get_random_available_slots(calendar_manager, days=5, slots_per_day=4)
+        local_tz = tz.gettz("America/New_York")
+        for day, slots in suggested_slots:
+            day_str = day.strftime("%A")
+            st.markdown(f"**{day_str}:**")
+            for slot in slots:
+                slot_start = slot[0].astimezone(local_tz)
+                slot_end = slot[1].astimezone(local_tz)
+                slot_str = f"- {slot_start.strftime('%I:%M %p')} - {slot_end.strftime('%I:%M %p')}"
+                st.markdown(slot_str)
+        # --- 1:1 MEETINGS LIST ---
+        display_1on1_meetings(calendar_manager)
     
     # Process meeting scheduling
-    if submitted and lead_name and lead_email and meeting_type:
+    if submitted and lead_name and lead_email and meeting_type and available_slots and selected_slot_idx is not None:
         # Clear sample data after submission
         st.session_state.meeting_sample_data = {}
         
@@ -225,7 +255,7 @@ def render_meeting_tab():
             "attendees": attendees,
             "context": meeting_context
         }
-        
+
         # Use DB-backed lead_id lookup/creation (robust, email-based)
         memory_manager = get_memory_manager()
         lead_data = {
@@ -239,6 +269,16 @@ def render_meeting_tab():
         # Process the meeting scheduling
         with st.spinner("🤖 AI Agent is scheduling the meeting..."):
             result = process_meeting_scheduling_demo(lead_id, meeting_request)
+            # --- CALENDAR EVENT CREATION ---
+            slot_start, slot_end = available_slots[selected_slot_idx]
+            # Overwrite suggested_time in meeting_request/result with the selected slot
+            result['scheduling_result']['suggested_time'] = slot_start.strftime('%A %b %d, %Y, %I:%M %p')
+            # Use slot_start and slot_end for calendar event creation
+            success, info = create_calendar_event_from_meeting_request_with_slot(meeting_request, result.get('scheduling_result', {}), slot_start, slot_end)
+            if success:
+                st.success(f"Calendar event created! [View event]({info})")
+            else:
+                st.error(f"Failed to create calendar event: {info}")
         
         # Store result for display
         store_demo_result("meeting", lead_id, result)
@@ -788,4 +828,198 @@ def display_meeting_results(lead_id: str, meeting_request: Dict[str, Any], resul
     if st.button("🗑️ Clear Results", key="meeting_clear_results_btn"):
         if hasattr(st.session_state, 'demo_results') and 'meeting' in st.session_state.demo_results:
             st.session_state.demo_results['meeting'] = {}
-        st.rerun() 
+        st.rerun()
+
+
+def create_calendar_event_from_meeting_request(meeting_request, scheduling_result):
+    """
+    Create a Google Calendar event for the scheduled meeting.
+    """
+    # Rep name is hardcoded for now
+    rep_name = "Alex Thompson"
+    lead_name = meeting_request.get("lead_name", "Lead")
+    event_name = f"{rep_name}/{lead_name} 1:1"
+    # Parse start time from scheduling_result
+    suggested_time = scheduling_result.get("suggested_time", "TBD")
+    # Try to parse a datetime from suggested_time (very basic, demo only)
+    # Example: "Thursday 2:30 PM EST" or "Tomorrow 2:00 PM EST"
+    # For demo, just use now + 1 day at 14:00 if can't parse
+    import dateutil.parser
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    start_time = now + timedelta(days=1)
+    try:
+        # Try to parse time from string
+        match = re.search(r"(\d{1,2}:\d{2} ?[AP]M)", suggested_time)
+        if match:
+            time_str = match.group(1)
+            # Use today's date for demo
+            start_time = dateutil.parser.parse(f"{now.strftime('%Y-%m-%d')} {time_str}")
+            if "tomorrow" in suggested_time.lower():
+                start_time += timedelta(days=1)
+        else:
+            # fallback
+            start_time = now + timedelta(days=1, hours=2)
+    except Exception:
+        start_time = now + timedelta(days=1, hours=2)
+    # Parse duration string (e.g., "30 minutes")
+    duration_str = meeting_request.get("duration", "30 minutes")
+    duration_minutes = 30
+    match = re.search(r"(\d+)", duration_str)
+    if match:
+        duration_minutes = int(match.group(1))
+    end_time = start_time + timedelta(minutes=duration_minutes)
+    # Notes
+    notes = f"Lead: {lead_name}\nEmail: {meeting_request.get('lead_email')}\nCompany: {meeting_request.get('lead_company')}\nRole: {meeting_request.get('lead_role')}\nMeeting Type: {meeting_request.get('meeting_type')}\nContext: {meeting_request.get('context')}\n\nLooking forward to discussing {meeting_request.get('meeting_type', '').lower()} more!"
+    # Create event via CalendarManager
+    calendar_manager = CalendarManager()
+    try:
+        event = calendar_manager.service.events().insert(
+            calendarId="primary",
+            body={
+                "summary": event_name,
+                "description": notes,
+                "start": {"dateTime": start_time.isoformat(), "timeZone": "America/New_York"},
+                "end": {"dateTime": end_time.isoformat(), "timeZone": "America/New_York"},
+                "attendees": [
+                    {"email": meeting_request.get("lead_email")},
+                    {"email": "alex.thompson@yourcompany.com"}
+                ],
+            },
+        ).execute()
+        return True, event.get("htmlLink", "")
+    except Exception as e:
+        return False, str(e)
+
+
+def get_random_available_slots(calendar_manager, days=5, slots_per_day=4):
+    """
+    Suggest random available 30-min slots per weekday (Mon-Fri, 9am-5pm) for the next N business days.
+    """
+    from datetime import timezone
+    now = datetime.now()
+    slots = []
+    checked = set()
+    day_count = 0
+    current_date = now
+    while day_count < days:
+        if current_date.weekday() < 5:  # Mon-Fri
+            day_slots = []
+            # Generate all possible 30-min slots between 9am-5pm
+            base = current_date.replace(hour=9, minute=0, second=0, microsecond=0)
+            possible = [base + timedelta(minutes=30*i) for i in range(16)]  # 9:00 to 16:30
+            random.shuffle(possible)
+            for slot in possible:
+                if len(day_slots) >= slots_per_day:
+                    break
+                slot_end = slot + timedelta(minutes=30)
+                # Only check future slots
+                if slot < now:
+                    continue
+                # Avoid duplicate checks
+                key = (slot.isoformat(), slot_end.isoformat())
+                if key in checked:
+                    continue
+                checked.add(key)
+                # Convert to UTC for CalendarManager
+                slot_start_utc = slot.astimezone(timezone.utc)
+                slot_end_utc = slot_end.astimezone(timezone.utc)
+                if calendar_manager.is_time_slot_free(slot_start_utc, slot_end_utc):
+                    day_slots.append((slot, slot_end))
+            if day_slots:
+                slots.append((current_date.date(), day_slots))
+            day_count += 1
+        current_date += timedelta(days=1)
+    return slots
+
+
+def display_1on1_meetings(calendar_manager):
+    """
+    Display all upcoming 1:1 meetings (title, time, link) in a human-readable, bolded format.
+    """
+    st.markdown("### 🗓️ Upcoming 1:1 Meetings")
+    meetings = calendar_manager.get_1on1_meetings()
+    if not meetings:
+        st.info("No upcoming 1:1 meetings found.")
+        return
+    local_tz = tz.gettz("America/New_York")
+    for event in meetings:
+        summary = event.get("summary", "(No Title)")
+        start = event["start"].get("dateTime", event["start"].get("date"))
+        html_link = event.get("htmlLink", "")
+        # Parse and format start time
+        try:
+            dt = datetime.fromisoformat(start.replace("Z", "+00:00")).astimezone(local_tz)
+            date_str = dt.strftime("%b %d")
+            day = dt.day
+            # Add ordinal suffix
+            if 4 <= day <= 20 or 24 <= day <= 30:
+                suffix = "th"
+            else:
+                suffix = ["st", "nd", "rd"][day % 10 - 1]
+            date_str = dt.strftime(f"%B {day}{suffix}, %Y, at %I:%M%p (%Z)")
+        except Exception:
+            date_str = start
+        st.markdown(f"- **{date_str}**: [{summary}]({html_link})")
+
+
+def get_next_weekdays(n=5, start_date=None):
+    """Return a list of the next n weekdays (Mon-Fri) as datetime.date objects."""
+    if start_date is None:
+        start_date = datetime.now().date()
+    days = []
+    d = start_date
+    while len(days) < n:
+        if d.weekday() < 5:
+            days.append(d)
+        d += timedelta(days=1)
+    return days
+
+
+def get_available_slots_for_day(calendar_manager, day, slot_length=30):
+    """
+    Return all available slots for a given day (as datetime objects, 30-min intervals, 9am-5pm).
+    """
+    from datetime import timezone
+    local_tz = tz.gettz("America/New_York")
+    base = datetime.combine(day, datetime.min.time()).replace(hour=9, tzinfo=local_tz)
+    now = datetime.now(local_tz)
+    slots = []
+    for i in range(16):  # 9:00 to 16:30
+        slot_start = base + timedelta(minutes=slot_length*i)
+        slot_end = slot_start + timedelta(minutes=slot_length)
+        if slot_start < now:
+            continue
+        # Convert to UTC for CalendarManager
+        slot_start_utc = slot_start.astimezone(timezone.utc)
+        slot_end_utc = slot_end.astimezone(timezone.utc)
+        if calendar_manager.is_time_slot_free(slot_start_utc, slot_end_utc):
+            slots.append((slot_start, slot_end))
+    return slots
+
+
+def create_calendar_event_from_meeting_request_with_slot(meeting_request, scheduling_result, slot_start, slot_end):
+    rep_name = "Alex Thompson"
+    lead_name = meeting_request.get("lead_name", "Lead")
+    event_name = f"{rep_name}/{lead_name} 1:1"
+    notes = f"Lead: {lead_name}\nEmail: {meeting_request.get('lead_email')}\nCompany: {meeting_request.get('lead_company')}\nRole: {meeting_request.get('lead_role')}\nMeeting Type: {meeting_request.get('meeting_type')}\nContext: {meeting_request.get('context')}\n\nLooking forward to discussing {meeting_request.get('meeting_type', '').lower()} more!"
+    calendar_manager = CalendarManager()
+    # Use the stubbed recipient validation to only send to sandbox
+    attendee_emails = calendar_manager.validate_recipient_emails([
+        meeting_request.get("lead_email"),
+        "alex.thompson@yourcompany.com"
+    ])
+    try:
+        event = calendar_manager.service.events().insert(
+            calendarId="primary",
+            body={
+                "summary": event_name,
+                "description": notes,
+                "start": {"dateTime": slot_start.isoformat(), "timeZone": "America/New_York"},
+                "end": {"dateTime": slot_end.isoformat(), "timeZone": "America/New_York"},
+                "attendees": [{"email": email} for email in attendee_emails],
+            },
+        ).execute()
+        return True, event.get("htmlLink", "")
+    except Exception as e:
+        return False, str(e)

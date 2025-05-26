@@ -12,7 +12,7 @@ from ui.components.agent_visualizer import display_agent_reasoning, display_agen
 from ui.components.crm_viewer import display_crm_record
 from ui.components.email_display import display_email_output
 from agents.models import LeadQualificationResult
-from integrations.email_manager import EmailManager
+from integrations.google.email_manager import EmailManager
 
 
 def render_qualify_tab():

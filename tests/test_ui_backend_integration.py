@@ -1169,7 +1169,7 @@ class TestDiscoverNewLeadsTab(unittest.TestCase):
 
 # --- EmailManager integration tests ---
 import pytest
-from integrations.email_manager import EmailManager
+from integrations.google.email_manager import EmailManager
 
 # The following tests were removed as they tested the old SMTP-based API or NotImplementedError, which are no longer relevant:
 # - test_email_manager_init

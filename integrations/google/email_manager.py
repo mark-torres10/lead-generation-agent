@@ -1,43 +1,26 @@
-import os.path
 import base64
 from typing import List, Optional
 from email.message import EmailMessage
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from integrations.google.google_api_core import GoogleAPICore
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-credentials_path = os.path.join(current_dir, "credentials.json")
-token_path = os.path.join(current_dir, "token.json")
-
-class EmailManager:
+class EmailManager(GoogleAPICore):
     """
     Manages sending emails via the Gmail API using OAuth2 credentials.
     Requires credentials.json in the working directory.
     """
-    def __init__(self, credentials_path: str = credentials_path, token_path: str = token_path):
-        self.credentials_path = credentials_path
-        self.token_path = token_path
-        self.service = self._get_gmail_service()
+    def __init__(self, credentials_path: str = None, token_path: str = None):
+        super().__init__(
+            api_name="gmail",
+            api_version="v1",
+            scopes=SCOPES,
+            credentials_path=credentials_path,
+            token_path=token_path,
+        )
 
-    def _get_gmail_service(self):
-        creds = None
-        if os.path.exists(self.token_path):
-            creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
-                creds = flow.run_local_server(port=0)
-            with open(self.token_path, "w") as token:
-                token.write(creds.to_json())
-        return build("gmail", "v1", credentials=creds)
-    
     def validate_recipient_emails(self, emails: list[str]) -> list[str]:
         """
         Validate recipient emails.
