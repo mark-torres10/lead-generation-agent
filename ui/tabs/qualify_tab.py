@@ -12,6 +12,7 @@ from ui.components.agent_visualizer import display_agent_reasoning, display_agen
 from ui.components.crm_viewer import display_crm_record
 from ui.components.email_display import display_email_output
 from agents.models import LeadQualificationResult
+from integrations.email_manager import EmailManager
 
 
 def render_qualify_tab():
@@ -131,6 +132,9 @@ def render_qualify_tab():
         # Store both result and form_data for display and testability
         store_demo_result("qualify", lead_id, {"result": result, "form_data": form_data})
         
+        # --- EMAIL SENDING LOGIC ---
+        send_qualification_email(form_data, result)
+        
         # Display results
         display_qualification_results(lead_id, form_data, result)
     
@@ -174,16 +178,21 @@ def process_qualification_demo(lead_id: str, form_data: Dict[str, Any]) -> LeadQ
     return qualification
 
 
-def generate_follow_up_email(form_data: Dict[str, Any], qualification: Dict[str, Any]) -> Dict[str, Any]:
+def generate_follow_up_email(form_data: Dict[str, Any], qualification) -> Dict[str, Any]:
     """Generate a follow-up email based on qualification results."""
-    
     name = form_data.get('name', 'there')
     company = form_data.get('company', 'your company')
     role = form_data.get('role', 'your role')
-    
-    # Customize email based on lead score
-    lead_score = qualification.get('lead_score', 50)
-    
+
+    # Support both dict and Pydantic model
+    def get_field(obj, field, default=None):
+        if isinstance(obj, dict):
+            return obj.get(field, default)
+        return getattr(obj, field, default)
+
+    lead_score = get_field(qualification, 'lead_score', 50)
+    priority = get_field(qualification, 'priority', 'medium')
+
     if lead_score >= 80:
         # High-value lead
         subject = f"Perfect timing for {company}'s automation goals"
@@ -202,7 +211,6 @@ Alex Thompson
 Senior Solutions Consultant
 sales@yourcompany.com
 (555) 123-4567"""
-    
     elif lead_score >= 60:
         # Medium-value lead
         subject = f"Solutions for {company}'s automation needs"
@@ -220,7 +228,6 @@ Best regards,
 Alex Thompson
 Solutions Consultant
 sales@yourcompany.com"""
-    
     else:
         # Lower-value lead - nurture approach
         subject = "Resources for your automation journey"
@@ -236,7 +243,6 @@ Best regards,
 Alex Thompson
 Solutions Consultant
 sales@yourcompany.com"""
-    
     return {
         'subject': subject,
         'body': body,
@@ -245,7 +251,7 @@ sales@yourcompany.com"""
         'metadata': {
             'generated_at': '2024-01-10 10:30:00',
             'lead_score': lead_score,
-            'priority': qualification.get('priority', 'medium'),
+            'priority': priority,
             'tone': 'professional',
             'template_used': 'qualification_follow_up'
         }
@@ -438,3 +444,31 @@ def display_qualification_results(lead_id: str, form_data: dict, result):
         if hasattr(st.session_state, 'demo_results') and 'qualify' in st.session_state.demo_results:
             st.session_state.demo_results['qualify'] = {}
         st.rerun() 
+
+
+def send_qualification_email(form_data: Dict[str, Any], qualification, sandbox_email: str = "mtorres.sandbox@gmail.com") -> None:
+    """Send the qualification follow-up email using EmailManager. Extracted for testability."""
+    email_manager = EmailManager()
+    subject = f"Qualification for lead {form_data['name']}"
+    followup = generate_follow_up_email(form_data, qualification)
+    llm_message = followup['body']
+    lead_info = (
+        "\n\n[Lead Information]\n"
+        f"Name: {form_data['name']}\n"
+        f"Email: {form_data['email']}\n"
+        f"Company: {form_data['company']}\n"
+        f"Role: {form_data['role']}\n"
+        f"Message: {form_data['message']}\n"
+    )
+    full_message = llm_message + lead_info
+    try:
+        email_manager.send_email(
+            subject=subject,
+            message=full_message,
+            recipients=[sandbox_email],
+            sender=sandbox_email
+        )
+    except Exception as e:
+        print(f"Error sending qualification email: {e}")
+        # In UI, this is shown as st.error; here, just raise or log
+        raise

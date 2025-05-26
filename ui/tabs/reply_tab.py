@@ -11,6 +11,7 @@ from ui.state.session import get_memory_manager, store_demo_result
 from ui.components.agent_visualizer import display_agent_timeline
 from ui.components.email_display import display_email_output
 from agents.models import ReplyAnalysisResult
+from integrations.email_manager import EmailManager
 
 
 def render_reply_tab():
@@ -187,6 +188,8 @@ Sarah"""
             "reply_content": reply_content,
             "result": result
         })
+        # --- EMAIL SENDING LOGIC ---
+        send_reply_analysis_email(lead_data, reply_content, result)
         # Display results
         display_reply_analysis_results(lead_id, lead_data, reply_content, result)
     
@@ -680,3 +683,30 @@ def display_reply_analysis_results(lead_id: str, lead_data: Dict[str, Any], repl
         if hasattr(st.session_state, 'demo_results') and 'reply' in st.session_state.demo_results:
             st.session_state.demo_results['reply'] = {}
         st.rerun()
+
+
+def send_reply_analysis_email(lead_data: Dict[str, Any], reply_content: str, analysis: ReplyAnalysisResult, sandbox_email: str = "mtorres.sandbox@gmail.com") -> None:
+    """Send the reply analysis email using EmailManager. Extracted for testability."""
+    email_manager = EmailManager()
+    subject = f"Reply analysis for lead {lead_data['name']}"
+    response_email = generate_response_email(lead_data, reply_content, analysis)
+    llm_message = response_email['body']
+    lead_info = (
+        "\n\n[Lead Information]\n"
+        f"Name: {lead_data['name']}\n"
+        f"Email: {lead_data['email']}\n"
+        f"Company: {lead_data['company']}\n"
+        f"Original Reply: {reply_content}\n"
+    )
+    full_message = llm_message + lead_info
+    try:
+        email_manager.send_email(
+            subject=subject,
+            message=full_message,
+            recipients=[sandbox_email],
+            sender=sandbox_email
+        )
+    except Exception as e:
+        # In UI, this is shown as st.error; here, just raise or log
+        print(f"Error sending reply analysis email: {e}")
+        raise
