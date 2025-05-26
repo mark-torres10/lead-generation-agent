@@ -13,6 +13,7 @@ from ui.components.crm_viewer import display_crm_record
 from ui.components.email_display import display_email_output
 from agents.models import LeadQualificationResult
 from integrations.google.email_manager import EmailManager
+from integrations.slack_manager import SlackManager
 
 
 def render_qualify_tab():
@@ -134,6 +135,17 @@ def render_qualify_tab():
         
         # --- EMAIL SENDING LOGIC ---
         send_qualification_email(form_data, result)
+        # --- SLACK NOTIFICATION LOGIC ---
+        try:
+            slack = SlackManager()
+            followup = generate_follow_up_email(form_data, result)
+            slack.send_message(
+                channel_name="qualified-leads",
+                title=followup['subject'],
+                body=followup['body']
+            )
+        except Exception as e:
+            print(f"Error sending Slack notification: {e}")
         
         # Display results
         display_qualification_results(lead_id, form_data, result)

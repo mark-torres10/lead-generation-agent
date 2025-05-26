@@ -15,6 +15,7 @@ load_dotenv(env_path)
 
 # Export commonly used environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 
 # Validate that required environment variables are set
 if not OPENAI_API_KEY:

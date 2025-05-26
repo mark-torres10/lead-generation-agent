@@ -5,6 +5,12 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+# Unified scopes for all Google integrations (Gmail send + Calendar events)
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events"
+]
+
 class GoogleAPICore:
     """
     Base class for Google API integrations. Handles OAuth2 credential loading, token refresh,
@@ -14,13 +20,13 @@ class GoogleAPICore:
         self,
         api_name: str,
         api_version: str,
-        scopes: list[str],
+        scopes: Optional[list[str]] = None,
         credentials_path: Optional[str] = None,
         token_path: Optional[str] = None,
     ):
         self.api_name = api_name
         self.api_version = api_version
-        self.scopes = scopes
+        self.scopes = scopes or SCOPES
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
         self.credentials_path = credentials_path or os.path.join(self.current_dir, "credentials.json")
         self.token_path = token_path or os.path.join(self.current_dir, "token.json")

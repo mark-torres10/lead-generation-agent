@@ -11,6 +11,7 @@ from integrations.google.calendar_manager import CalendarManager
 import re
 import random
 from dateutil import tz
+from integrations.slack_manager import SlackManager
 
 from ui.state.session import get_memory_manager, store_demo_result
 from ui.components.agent_visualizer import display_agent_reasoning, display_agent_timeline
@@ -279,6 +280,17 @@ def render_meeting_tab():
                 st.success(f"Calendar event created! [View event]({info})")
             else:
                 st.error(f"Failed to create calendar event: {info}")
+            # --- SLACK NOTIFICATION LOGIC ---
+            try:
+                slack = SlackManager()
+                confirmation_email = generate_confirmation_email(meeting_request, result.get('scheduling_result', {}))
+                slack.send_message(
+                    channel_name="meeting-invites",
+                    title=confirmation_email['subject'],
+                    body=confirmation_email['body']
+                )
+            except Exception as e:
+                print(f"Error sending Slack notification: {e}")
         
         # Store result for display
         store_demo_result("meeting", lead_id, result)

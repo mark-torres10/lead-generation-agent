@@ -5,7 +5,7 @@ from googleapiclient.errors import HttpError
 
 from integrations.google.google_api_core import GoogleAPICore
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+# SCOPES removed; now inherited from GoogleAPICore
 
 class EmailManager(GoogleAPICore):
     """
@@ -16,7 +16,7 @@ class EmailManager(GoogleAPICore):
         super().__init__(
             api_name="gmail",
             api_version="v1",
-            scopes=SCOPES,
+            # scopes omitted to use default
             credentials_path=credentials_path,
             token_path=token_path,
         )

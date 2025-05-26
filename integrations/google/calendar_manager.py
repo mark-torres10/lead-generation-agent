@@ -4,8 +4,6 @@ from googleapiclient.errors import HttpError
 
 from integrations.google.google_api_core import GoogleAPICore
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
-
 class CalendarManager(GoogleAPICore):
     """
     Manages Google Calendar API operations using OAuth2 credentials.
@@ -14,7 +12,6 @@ class CalendarManager(GoogleAPICore):
         super().__init__(
             api_name="calendar",
             api_version="v3",
-            scopes=SCOPES,
             credentials_path=credentials_path,
             token_path=token_path,
         )

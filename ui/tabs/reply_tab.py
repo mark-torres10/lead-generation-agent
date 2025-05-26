@@ -12,6 +12,7 @@ from ui.components.agent_visualizer import display_agent_timeline
 from ui.components.email_display import display_email_output
 from agents.models import ReplyAnalysisResult
 from integrations.google.email_manager import EmailManager
+from integrations.slack_manager import SlackManager
 
 
 def render_reply_tab():
@@ -190,6 +191,17 @@ Sarah"""
         })
         # --- EMAIL SENDING LOGIC ---
         send_reply_analysis_email(lead_data, reply_content, result)
+        # --- SLACK NOTIFICATION LOGIC ---
+        try:
+            slack = SlackManager()
+            response_email = generate_response_email(lead_data, reply_content, result)
+            slack.send_message(
+                channel_name="inbound-email-leads",
+                title=response_email['subject'],
+                body=response_email['body']
+            )
+        except Exception as e:
+            print(f"Error sending Slack notification: {e}")
         # Display results
         display_reply_analysis_results(lead_id, lead_data, reply_content, result)
     
