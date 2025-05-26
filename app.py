@@ -8,6 +8,7 @@ import streamlit as st
 from ui.tabs.qualify_tab import render_qualify_tab
 from ui.tabs.reply_tab import render_reply_tab
 from ui.tabs.meeting_tab import render_meeting_tab
+from ui.tabs.discover_tab import render_discover_tab
 
 # Import session state management
 from ui.state.session import initialize_session_state
@@ -37,20 +38,24 @@ def main():
     """)
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs([
+    tab0, tab1, tab2, tab3 = st.tabs([
         "📝 Contact Form → Follow-up",
-        "📧 Reply Analysis → Response", 
-        "📅 Meeting Scheduling"
+        "📧 Reply Analysis → Response",
+        "📅 Meeting Scheduling",
+        "🔎 Discover New Leads"
     ])
     
-    with tab1:
+    with tab0:
         render_qualify_tab()
     
-    with tab2:
+    with tab1:
         render_reply_tab()
     
-    with tab3:
+    with tab2:
         render_meeting_tab()
+    
+    with tab3:
+        render_discover_tab()
     
     # Sidebar with additional information
     with st.sidebar:

@@ -1040,5 +1040,120 @@ def test_reply_tab_crm_before_after(monkeypatch):
     assert after_args[0][1]["priority"] == "high"
 
 
+class TestDiscoverNewLeadsTab(unittest.TestCase):
+    """Test backend logic for the Discover New Leads tab."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test_ui_discover.db")
+        self.test_store = SQLiteMemoryStore(self.db_path)
+        self.memory_manager = MemoryManager(self.test_store)
+        # Dummy data for discover tab
+        self.dummy_leads = [
+            {"name": "Alice Johnson", "email": "alice@acmecorp.com", "company": "Acme Corp"},
+            {"name": "Bob Smith", "email": "bob@acmecorp.com", "company": "Acme Corp"},
+            {"name": "Sarah Chen", "email": "sarah.chen@techcorp.com", "company": "TechCorp Industries"},
+            {"name": "David Kim", "email": "david.kim@innovatetech.com", "company": "InnovateTech Solutions"},
+            {"name": "Priya Patel", "email": "priya@finwise.com", "company": "Finwise"},
+            {"name": "John Lee", "email": "john.lee@medigen.com", "company": "Medigen"},
+            {"name": "Maria Garcia", "email": "maria@greengrid.com", "company": "GreenGrid"},
+            {"name": "Tom Brown", "email": "tom@buildwise.com", "company": "Buildwise"},
+            {"name": "Linda Xu", "email": "linda@cybercore.com", "company": "Cybercore"},
+            {"name": "Omar Farouk", "email": "omar@logix.com", "company": "Logix"},
+        ]
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+        os.rmdir(self.temp_dir)
+
+    def test_discover_leads_successful_flow(self):
+        """User enters a known email, finds other emails at the same domain, selects one, LLM generates outreach email, user edits and submits."""
+        from ui.tabs import discover_tab
+        # Patch dummy data and LLM
+        with patch.object(discover_tab, 'DUMMY_LEADS', self.dummy_leads), \
+             patch.object(discover_tab, 'generate_outreach_email') as mock_llm:
+            mock_llm.return_value = "Hi Bob, we're working with Alice Johnson at Acme Corp and wanted to reach out."
+            # Simulate user entering 'alice@acmecorp.com'
+            known_email = "alice@acmecorp.com"
+            discovered = discover_tab.find_leads_by_domain(known_email)
+            expected_result = [lead for lead in self.dummy_leads if lead["email"] != known_email and lead["email"].endswith("@acmecorp.com")]
+            self.assertEqual(discovered, expected_result)
+            # Simulate selecting Bob and generating outreach
+            selected = discovered[0]
+            draft = discover_tab.generate_outreach_email(selected["email"], known_email)
+            self.assertIn("Alice Johnson", draft)
+            # Simulate user edits and submits
+            edited_draft = draft + "\nLooking forward to connecting!"
+            result = discover_tab.submit_outreach_email(selected["email"], edited_draft)
+            self.assertTrue(result["success"])
+            self.assertIn(selected["email"], result["message"])
+
+    def test_discover_leads_no_matches(self):
+        """User enters an email with a domain not in the dummy data, receives a clear 'no leads found' message."""
+        from ui.tabs import discover_tab
+        with patch.object(discover_tab, 'DUMMY_LEADS', self.dummy_leads):
+            unknown_email = "nobody@unknownco.com"
+            discovered = discover_tab.find_leads_by_domain(unknown_email)
+            self.assertEqual(discovered, [])
+            msg = discover_tab.no_leads_found_message(unknown_email)
+            self.assertIn("Sorry", msg)
+            self.assertIn("unknownco.com", msg)
+
+    def test_demo_email_selection_clears_manual_input(self):
+        """Demo email selection and manual input can both be set, but manual input takes precedence if both are set."""
+        from ui.tabs import discover_tab
+        # Simulate UI state
+        manual_input = "alice@acmecorp.com"
+        demo_selected = "sarah.chen@techcorp.com"
+        # Both set: manual_input takes precedence, demo_selected is cleared
+        manual_input, demo_selected = discover_tab.handle_input_change(manual_input, demo_selected)
+        self.assertEqual(manual_input, "alice@acmecorp.com")
+        self.assertEqual(demo_selected, "")
+        # Only demo_selected set
+        manual_input, demo_selected = discover_tab.handle_input_change("", "sarah.chen@techcorp.com")
+        self.assertEqual(manual_input, "")
+        self.assertEqual(demo_selected, "sarah.chen@techcorp.com")
+        # Only manual_input set
+        manual_input, demo_selected = discover_tab.handle_input_change("bob@acmecorp.com", "")
+        self.assertEqual(manual_input, "bob@acmecorp.com")
+        self.assertEqual(demo_selected, "")
+        # Both empty
+        manual_input, demo_selected = discover_tab.handle_input_change("", "")
+        self.assertEqual(manual_input, "")
+        self.assertEqual(demo_selected, "")
+
+    def test_outreach_email_editable_and_submission_logs(self):
+        """LLM draft is editable and submission logs the action (no real email sent)."""
+        from ui.tabs import discover_tab
+        with patch.object(discover_tab, 'DUMMY_LEADS', self.dummy_leads), \
+             patch.object(discover_tab, 'generate_outreach_email') as mock_llm, \
+             patch.object(discover_tab, 'log_outreach_action') as mock_log:
+            mock_llm.return_value = "Hi Bob, we're working with Alice Johnson at Acme Corp and wanted to reach out."
+            selected = self.dummy_leads[1]  # Bob
+            draft = discover_tab.generate_outreach_email(selected["email"], "alice@acmecorp.com")
+            edited = draft + "\nLet's connect soon."
+            discover_tab.submit_outreach_email(selected["email"], edited)
+            mock_log.assert_called_once()
+            args, kwargs = mock_log.call_args
+            self.assertIn(selected["email"], args)
+            self.assertTrue(any("Let's connect soon." in str(arg) for arg in args))
+
+    def test_discover_leads_edge_cases(self):
+        """All error and edge cases are handled gracefully (e.g., empty input, selecting self, etc.)."""
+        from ui.tabs import discover_tab
+        with patch.object(discover_tab, 'DUMMY_LEADS', self.dummy_leads):
+            # Empty input
+            discovered = discover_tab.find_leads_by_domain("")
+            self.assertEqual(discovered, [])
+            # Selecting self
+            discovered = discover_tab.find_leads_by_domain("bob@acmecorp.com")
+            emails = [lead["email"] for lead in discovered]
+            self.assertNotIn("bob@acmecorp.com", emails)
+            # Invalid email format
+            discovered = discover_tab.find_leads_by_domain("notanemail")
+            self.assertEqual(discovered, [])
+
+
 if __name__ == "__main__":
     unittest.main() 
