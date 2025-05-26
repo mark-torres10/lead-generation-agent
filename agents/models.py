@@ -77,6 +77,9 @@ class LeadQualificationResult(BaseModel):
     # For backward compatibility
     lead_disposition: Optional[str] = None
     disposition_confidence: Optional[int] = None
+    # New fields for explainability
+    signals: Optional[list[str]] = None
+    confidence_improvements: Optional[Union[list[str], str]] = None
 
 # --- Meeting Scheduling Models ---
 

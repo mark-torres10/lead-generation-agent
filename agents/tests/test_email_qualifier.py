@@ -66,6 +66,9 @@ class TestEmailQualifier:
         for key in expected_result:
             assert key in result_dict
             assert result_dict[key] == expected_result[key]
+        # New fields for explainability
+        assert "signals" in result_dict
+        assert "confidence_improvements" in result_dict
     
     def test_qualify_with_missing_required_fields(self):
         """Test qualification with missing required fields."""

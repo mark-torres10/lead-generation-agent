@@ -113,9 +113,6 @@ def render_qualify_tab():
     
     # Process form submission
     if submitted and name and email and message:
-        # Clear sample data after submission
-        st.session_state.qualify_sample_data = {}
-        
         # Create form data
         form_data = {
             "name": name,
@@ -132,8 +129,8 @@ def render_qualify_tab():
         with st.spinner("🤖 AI Agent is processing the lead..."):
             result = process_qualification_demo(lead_id, form_data)
         
-        # Store result for display
-        store_demo_result("qualify", lead_id, result)
+        # Store both result and form_data for display and testability
+        store_demo_result("qualify", lead_id, {"result": result, "form_data": form_data})
         
         # Display results
         display_qualification_results(lead_id, form_data, result)
@@ -147,11 +144,18 @@ def render_qualify_tab():
         if results:
             latest_lead_id = max(results.keys())
             latest_result = results[latest_lead_id]
-            
-            # Get the form data from the result
-            form_data = latest_result.get('form_data', {})
-            
-            display_qualification_results(latest_lead_id, form_data, latest_result)
+            # If stored as {"result": ..., "form_data": ...}
+            if isinstance(latest_result, dict) and "result" in latest_result and "form_data" in latest_result:
+                display_qualification_results(latest_lead_id, latest_result["form_data"], latest_result["result"])
+            else:
+                # Fallback for legacy results
+                if hasattr(latest_result, 'model_dump'):
+                    form_data = {}
+                elif isinstance(latest_result, dict):
+                    form_data = latest_result.get('form_data', {})
+                else:
+                    form_data = {}
+                display_qualification_results(latest_lead_id, form_data, latest_result)
 
 
 def process_qualification_demo(lead_id: str, form_data: Dict[str, Any]) -> LeadQualificationResult:
@@ -286,36 +290,125 @@ def generate_demo_timeline(form_data: Dict[str, Any], qualification: Dict[str, A
     ]
 
 
-def display_qualification_results(lead_id: str, form_data: Dict[str, Any], result: LeadQualificationResult):
-    """
-    Display the qualification results in the UI.
-    Args:
-        lead_id: Unique identifier for the lead
-        form_data: Contact form data
-        result: LeadQualificationResult from the agent
-    """
-    st.success(f"Lead {form_data['name']} qualified!")
-    st.markdown(f"**Priority:** {result.priority}")
-    st.markdown(f"**Lead Score:** {result.lead_score}")
-    st.markdown(f"**Reasoning:** {result.reasoning}")
-    st.markdown(f"**Next Action:** {result.next_action}")
-    st.markdown(f"**Disposition:** {result.disposition}")
-    st.markdown(f"**Confidence:** {result.confidence}")
-    if result.sentiment:
-        st.markdown(f"**Sentiment:** {result.sentiment}")
-    if result.urgency:
-        st.markdown(f"**Urgency:** {result.urgency}")
+def display_qualification_results(lead_id: str, form_data: dict, result):
+    # Header Card
+    st.markdown(f"""
+    <div style="background: #f8f9fa; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px #e9ecef;">
+      <div style="display: flex; align-items: center;">
+        <div style="font-size: 2.2em; font-weight: bold; margin-right: 16px;">{form_data.get('name', 'Lead')}</div>
+        <div style="font-size: 1.2em; color: #6c757d;">{form_data.get('company', '')}</div>
+        <span style="margin-left: auto; background: #e0f7fa; color: #00796b; border-radius: 8px; padding: 4px 12px; font-size: 0.9em;">Qualified by AI</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Key Metrics
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+    score = result.lead_score
+    score_color = "green" if score >= 80 else "orange" if score >= 50 else "red"
+    priority_val = getattr(result, "priority", None)
+    priority = str(priority_val).title() if priority_val else "Unknown"
+    priority_emoji = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(priority, "⚪")
+    disposition_val = getattr(result, "disposition", None)
+    disposition = str(disposition_val).title() if disposition_val else "Unknown"
+    confidence = getattr(result, "confidence", 0)
+    urgency_val = getattr(result, "urgency", None)
+    valid_urgencies = ["Low", "Medium", "High", "Urgent"]
+    if not urgency_val or str(urgency_val).strip().lower() == "not specified" or str(urgency_val).title() not in valid_urgencies:
+        urgency = "Not specified"
+    else:
+        urgency = str(urgency_val).title()
+    next_action = getattr(result, "next_action", "N/A")
+
+    with col1:
+        st.metric("Lead Score", f"{score}/100")
+        st.markdown(f"<span style='color:{score_color}; font-weight:bold;'>{score}/100</span>", unsafe_allow_html=True)
+    with col2:
+        st.metric("Priority", f"{priority_emoji} {priority}")
+    with col3:
+        st.metric("Status", disposition)
+    with col4:
+        st.metric("Confidence", f"{confidence}%")
+        if confidence < 60:
+            st.warning("AI is less certain about this lead.")
+
+    # Action Row
+    st.markdown(f"""
+    <div style="margin: 16px 0; padding: 12px; background: #e3f2fd; border-radius: 8px;">
+      <b>Next Action:</b> <span style="font-size:1.1em;">{next_action}</span>
+      <span style="margin-left: 16px; background: #fff3e0; color: #ef6c00; border-radius: 6px; padding: 2px 10px;">Urgency: {urgency}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if urgency == "Not specified":
+        st.info("To improve AI confidence, provide more details about the lead's timeline or urgency in the message.")
+
+    # Value-Add Statement
+    st.info("This lead was automatically qualified by AI, saving your team manual review time and surfacing the most promising opportunities first.")
+
+    # Explainability Section
+    with st.expander("🧠 Why did the AI qualify this lead this way?"):
+        st.write(result.reasoning)
+        # Show signals/factors as chips if available
+        signals = getattr(result, "signals", None)
+        if signals:
+            st.markdown("**Key Signals / Factors:**", unsafe_allow_html=True)
+            chip_html = "".join([
+                f"<span style='display:inline-block;background:#e0f2f1;color:#00695c;border-radius:16px;padding:4px 14px;margin:2px 6px 2px 0;font-size:0.98em;font-weight:500;box-shadow:0 1px 3px #e0e0e0;'>{s}</span>"
+                for s in signals if s
+            ])
+            st.markdown(f"<div style='margin-bottom:8px'>{chip_html}</div>", unsafe_allow_html=True)
+        # Show confidence improvements if confidence is low
+        confidence = getattr(result, "confidence", 0)
+        conf_impr = getattr(result, "confidence_improvements", None)
+        if confidence < 60 and conf_impr:
+            st.markdown(
+                f"<div style='margin-top:8px;padding:10px 16px;background:#fff3e0;border-radius:8px;color:#ef6c00;'><b>What would improve AI confidence?</b><br>{conf_impr if isinstance(conf_impr, str) else ', '.join(conf_impr)}</div>",
+                unsafe_allow_html=True
+            )
+
+    # Optionally, show what would improve confidence
+    # if confidence < 60:
+    #     st.info("To improve confidence, provide more details about the lead's company size or decision process.")
+
+    # CRM and timeline sections (reuse your existing components)
+    # ... (existing CRM/timeline/email display code) ...
     
     # Agent reasoning section
-    display_agent_reasoning(result.qualification)
+    qualification = getattr(result, "qualification", None)
+    if qualification is not None:
+        display_agent_reasoning(qualification)
     
-    # Timeline section
-    if result.timeline:
-        display_agent_timeline(result.timeline)
+    # Timeline section (persisted)
+    memory_manager = get_memory_manager()
+    interactions = memory_manager.get_interaction_history(lead_id)
+    if interactions:
+        # Convert interaction records to timeline steps for display_agent_timeline
+        timeline_steps = []
+        for interaction in interactions:
+            event_type = interaction.get("event_type", "event")
+            event_data = interaction.get("event_data", {})
+            timestamp = interaction.get("timestamp", "")
+            # Compose a readable step
+            step = {
+                "action": event_type.replace("_", " ").title(),
+                "details": event_data.get("reasoning") or event_data.get("next_action") or str(event_data),
+                "timestamp": timestamp
+            }
+            # Add key fields if present
+            if "lead_score" in event_data:
+                step["lead_score"] = event_data["lead_score"]
+            if "priority" in event_data:
+                step["priority"] = event_data["priority"]
+            timeline_steps.append(step)
+        display_agent_timeline(timeline_steps)
+    else:
+        st.info("No interaction history yet for this lead.")
     
     # Email output section
-    if result.email:
-        display_email_output(result.email)
+    email = getattr(result, "email", None)
+    if email is not None:
+        display_email_output(email)
     
     # CRM sections
     col1, col2 = st.columns(2)
@@ -337,7 +430,9 @@ def display_qualification_results(lead_id: str, form_data: Dict[str, Any], resul
     with col2:
         # After state (with qualification)
         st.subheader("🗂️ CRM Record - After")
-        display_crm_record(form_data, result.qualification, result.interactions, title="")
+        after_qualification = qualification if qualification is not None else result.model_dump()
+        interactions = getattr(result, "interactions", None)
+        display_crm_record(form_data, after_qualification, interactions, title="")
     
     # Clear results button
     if st.button("🗑️ Clear Results", key="qualify_clear_results_btn"):

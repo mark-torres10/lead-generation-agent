@@ -273,7 +273,11 @@ Previous Qualification:
             'reasoning': 'No specific reasoning provided',
             'next_action': 'Follow up',
             'disposition': 'warm',
-            'confidence': 50
+            'confidence': 50,
+            'urgency': 'not specified',
+            # New fields for explainability
+            'signals': [],
+            'confidence_improvements': []
         }
         
         parsed = self.agent_core.parse_structured_response(llm_response, expected_fields)
@@ -337,10 +341,29 @@ Reasoning: [Your reasoning for the score and priority]
 Next Action: [Recommended next action]
 Disposition: [hot/warm/cold/unqualified]
 Confidence: [0-100]
+Urgency: [high/medium/low/urgent/not specified]
+Signals/Factors: [List the key signals or factors that influenced your decision]
+What would improve your confidence?: [Describe what additional information or signals would increase your confidence in this assessment]
+
+**Instructions for Urgency Extraction:**
+- Carefully read the message for any timeline, deadline, or phrases indicating how soon the lead wants to proceed.
+- If the message mentions a specific timeframe (e.g., 'in the next 4-6 weeks', 'by end of month', 'Q1 implementation', 'as soon as possible', 'immediately', 'now', 'soon'), classify urgency as 'high' or 'urgent'.
+- If the message is vague but suggests some interest in timing (e.g., 'sometime this year', 'in the future'), classify as 'medium'.
+- If there is no mention of timing or urgency, classify as 'not specified'.
+- Only use 'not specified' if there are truly no urgency cues.
+
+**Examples:**
+- "We want something wrapped up in the next 4-6 weeks." → Urgency: high
+- "Budget approved for Q1 implementation." → Urgency: high
+- "We're actively discussing requirements with other firms now." → Urgency: high
+- "Please let us know how soon we can discuss with your team." → Urgency: high
+- "No rush, just exploring options." → Urgency: low
+- "Looking for a solution this year." → Urgency: medium
+- "Just interested." → Urgency: not specified
 
 Consider these factors:
 - Company size and potential value
-- Urgency indicators in the message
+- Urgency indicators in the message (see above)
 - Budget signals or decision-making authority
 - Specific needs expressed
 - Quality of the inquiry

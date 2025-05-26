@@ -416,6 +416,290 @@ Sales Team""",
         self.assertIsNotNone(result.disposition)
         self.assertIsNotNone(result.confidence)
 
+    def test_display_qualification_results_handles_missing_optional_fields(self):
+        """Test that display_qualification_results does not raise if optional fields are missing from LeadQualificationResult."""
+        from ui.tabs.qualify_tab import display_qualification_results
+        from agents.models import LeadQualificationResult
+        import types
+        # Minimal/fallback result (simulate error path)
+        result = LeadQualificationResult(
+            lead_id="test@example.com",
+            lead_name="Test User",
+            lead_company="TestCo",
+            priority="medium",
+            lead_score=50,
+            reasoning="Error during qualification: ...",
+            next_action="Manual review required",
+            disposition="unqualified",
+            confidence=0,
+            sentiment="neutral",
+            urgency="later"
+        )
+        # Patch Streamlit and display functions to no-op
+        import sys
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        st.session_state.memory_manager = self.memory_manager
+        # Patch display functions
+        import ui.components.agent_visualizer
+        import ui.components.crm_viewer
+        import ui.components.email_display
+        ui.components.agent_visualizer.display_agent_reasoning = lambda *a, **k: None
+        ui.components.agent_visualizer.display_agent_timeline = lambda *a, **k: None
+        ui.components.crm_viewer.display_crm_record = lambda *a, **k: None
+        ui.components.email_display.display_email_output = lambda *a, **k: None
+        # Should not raise
+        try:
+            display_qualification_results("test_lead_id", {"name": "Test User", "company": "TestCo"}, result)
+        except AttributeError as e:
+            self.fail(f"display_qualification_results raised AttributeError: {e}")
+
+    def test_timeline_persistence_across_qualifications(self):
+        """Test that timeline persists and updates across multiple qualifications for the same lead."""
+        from workflows import run_qualification
+        lead_id = "timeline_test_lead"
+        form_data1 = {
+            "name": "Timeline User",
+            "email": "timeline@demo.com",
+            "company": "DemoCo",
+            "role": "Manager",
+            "message": "First qualification submission."
+        }
+        form_data2 = {
+            "name": "Timeline User",
+            "email": "timeline@demo.com",
+            "company": "DemoCo",
+            "role": "Manager",
+            "message": "Second qualification submission with more info."
+        }
+        # Patch the memory manager used in the workflow
+        with patch('workflows.run_qualification.memory_manager', self.memory_manager):
+            # First qualification
+            run_qualification.qualify_lead(lead_id, form_data1)
+            # Second qualification
+            run_qualification.qualify_lead(lead_id, form_data2)
+        # Fetch interaction history
+        interactions = self.memory_manager.get_interaction_history(lead_id)
+        # There should be at least two qualification_updated events
+        qual_events = [i for i in interactions if i["event_type"] == "qualification_updated"]
+        self.assertGreaterEqual(len(qual_events), 2)
+        # Check for non-empty reasoning in first event and 'second qualification' in second event
+        self.assertTrue(isinstance(qual_events[0]["event_data"].get("reasoning", None), str) and qual_events[0]["event_data"]["reasoning"].strip())
+        self.assertIn("second qualification", qual_events[1]["event_data"].get("reasoning", ""))
+
+    def test_display_qualification_results_handles_none_fields(self):
+        """Test that display_qualification_results does not raise if urgency, priority, or disposition are None."""
+        from ui.tabs.qualify_tab import display_qualification_results
+        from agents.models import LeadQualificationResult
+        import sys
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        st.session_state.memory_manager = self.memory_manager
+        import ui.components.agent_visualizer
+        import ui.components.crm_viewer
+        import ui.components.email_display
+        ui.components.agent_visualizer.display_agent_reasoning = lambda *a, **k: None
+        ui.components.agent_visualizer.display_agent_timeline = lambda *a, **k: None
+        ui.components.crm_viewer.display_crm_record = lambda *a, **k: None
+        ui.components.email_display.display_email_output = lambda *a, **k: None
+        # Minimal result with empty string fields
+        result = LeadQualificationResult(
+            lead_id="test@example.com",
+            lead_name="Test User",
+            lead_company="TestCo",
+            priority="",
+            lead_score=50,
+            reasoning="Test reasoning",
+            next_action="Manual review required",
+            disposition="",
+            confidence=0,
+            sentiment="neutral",
+            urgency=""
+        )
+        try:
+            display_qualification_results("test_lead_id", {"name": "Test User", "company": "TestCo"}, result)
+        except Exception as e:
+            self.fail(f"display_qualification_results raised an exception with None fields: {e}")
+
+    def test_urgency_fallback_for_minimal_lead(self):
+        """Test that submitting a lead with minimal info results in urgency fallback in the UI."""
+        from workflows.run_qualification import qualify_lead
+        lead_id = "urgency_fallback_test"
+        form_data = {
+            "name": "Minimal User",
+            "email": "minimal@demo.com",
+            "company": "Demo Inc",
+            "role": "",
+            "message": "Just interested."
+        }
+        with patch('workflows.run_qualification.memory_manager', self.memory_manager):
+            result = qualify_lead(lead_id, form_data)
+        # Urgency should be 'not specified' in the result
+        urgency_val = result.urgency
+        if urgency_val is None:
+            urgency_val = "not specified"
+        self.assertIn(urgency_val.lower(), ["not specified", "unknown", ""])
+
+    def test_clear_results_resets_ui(self):
+        """Test that clearing results does not raise and resets the UI state."""
+        from ui.tabs.qualify_tab import display_qualification_results
+        from agents.models import LeadQualificationResult
+        import sys
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        st.session_state.memory_manager = self.memory_manager
+        import ui.components.agent_visualizer
+        import ui.components.crm_viewer
+        import ui.components.email_display
+        ui.components.agent_visualizer.display_agent_reasoning = lambda *a, **k: None
+        ui.components.agent_visualizer.display_agent_timeline = lambda *a, **k: None
+        ui.components.crm_viewer.display_crm_record = lambda *a, **k: None
+        ui.components.email_display.display_email_output = lambda *a, **k: None
+        # Simulate a LeadQualificationResult in session state
+        result = LeadQualificationResult(
+            lead_id="test@example.com",
+            lead_name="Test User",
+            lead_company="TestCo",
+            priority="medium",
+            lead_score=50,
+            reasoning="Test reasoning",
+            next_action="Manual review required",
+            disposition="unqualified",
+            confidence=0,
+            sentiment="neutral",
+            urgency=""
+        )
+        try:
+            # Simulate clearing results (should not raise)
+            st.session_state.demo_results = {"qualify": {"test_lead_id": result}}
+            # Call the code that would run after clearing
+            if hasattr(st.session_state, 'demo_results') and 'qualify' in st.session_state.demo_results:
+                results = st.session_state.demo_results['qualify']
+                if results:
+                    latest_lead_id = max(results.keys())
+                    latest_result = results[latest_lead_id]
+                    if hasattr(latest_result, 'model_dump'):
+                        form_data = {}
+                    elif isinstance(latest_result, dict):
+                        form_data = latest_result.get('form_data', {})
+                    else:
+                        form_data = {}
+                    display_qualification_results(latest_lead_id, form_data, latest_result)
+        except Exception as e:
+            self.fail(f"Clearing results raised an exception: {e}")
+
+    def test_form_submission_uses_edited_message(self):
+        """Test that editing the message after selecting a sample uses the edited value in the agent call."""
+        from ui.tabs.qualify_tab import process_qualification_demo
+        from agents.models import LeadQualificationResult
+        # Simulate sample data selection and user edit
+        sample_data = {
+            "name": "Sarah Chen",
+            "email": "sarah.chen@techcorp.com",
+            "company": "TechCorp Industries",
+            "role": "Chief Technology Officer",
+            "message": "We're looking for automation solutions to streamline our sales process. We have a team of 200+ sales reps and need better lead management. Budget approved for Q1 implementation."
+        }
+        # User edits the message
+        edited_message = "We're looking for automation solutions to streamline our sales process. We have a team of 50+ sales reps and need better lead management. Budget approved for Q2 implementation."
+        form_data = sample_data.copy()
+        form_data["message"] = edited_message
+        # Patch the agent to capture the input
+        import workflows.run_qualification
+        original_qualify_lead = workflows.run_qualification.qualify_lead
+        captured = {}
+        def mock_qualify_lead(lead_id, lead_data):
+            captured["lead_data"] = lead_data.copy()
+            # Return a dummy result
+            return LeadQualificationResult(
+                lead_id=lead_id,
+                lead_name=lead_data.get("name"),
+                lead_company=lead_data.get("company"),
+                priority="high",
+                lead_score=99,
+                reasoning="Test reasoning",
+                next_action="Test action",
+                disposition="hot",
+                confidence=100,
+                sentiment="positive",
+                urgency="high"
+            )
+        workflows.run_qualification.qualify_lead = mock_qualify_lead
+        try:
+            process_qualification_demo("test_lead_id", form_data)
+            self.assertIn("lead_data", captured)
+            self.assertEqual(captured["lead_data"]["message"], edited_message)
+        finally:
+            workflows.run_qualification.qualify_lead = original_qualify_lead
+
+    def test_form_submission_with_custom_values(self):
+        """Test that submitting the form with custom (non-default) values is processed correctly."""
+        from ui.tabs.qualify_tab import process_qualification_demo
+        from agents.models import LeadQualificationResult
+        form_data = {
+            "name": "Alex Example",
+            "email": "alex@example.com",
+            "company": "Example Corp",
+            "role": "VP of Marketing",
+            "message": "We are interested in a demo for our 10-person team. Looking for Q3 rollout."
+        }
+        import workflows.run_qualification
+        original_qualify_lead = workflows.run_qualification.qualify_lead
+        captured = {}
+        def mock_qualify_lead(lead_id, lead_data):
+            captured["lead_data"] = lead_data.copy()
+            return LeadQualificationResult(
+                lead_id=lead_id,
+                lead_name=lead_data.get("name"),
+                lead_company=lead_data.get("company"),
+                priority="medium",
+                lead_score=77,
+                reasoning="Test reasoning custom",
+                next_action="Test action custom",
+                disposition="warm",
+                confidence=80,
+                sentiment="neutral",
+                urgency="medium"
+            )
+        workflows.run_qualification.qualify_lead = mock_qualify_lead
+        try:
+            process_qualification_demo("custom_lead_id", form_data)
+            self.assertIn("lead_data", captured)
+            self.assertEqual(captured["lead_data"]["name"], "Alex Example")
+            self.assertEqual(captured["lead_data"]["message"], "We are interested in a demo for our 10-person team. Looking for Q3 rollout.")
+        finally:
+            workflows.run_qualification.qualify_lead = original_qualify_lead
+
 
 if __name__ == "__main__":
     unittest.main() 

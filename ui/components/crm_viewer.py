@@ -59,7 +59,10 @@ def display_crm_record(
             st.write(f"**Priority:** {priority_emoji} {priority}")
         
         with col3:
-            disposition = qualification.get('lead_disposition', 'unknown').title()
+            disposition_val = qualification.get('lead_disposition', 'unknown')
+            if disposition_val is None:
+                disposition_val = 'unknown'
+            disposition = str(disposition_val).title()
             st.write(f"**Status:** {disposition}")
         
         # Additional qualification details

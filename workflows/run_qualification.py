@@ -2,6 +2,7 @@
 Lead qualification experiment using the new EmailQualifier agent.
 """
 from typing import Dict, Any
+from datetime import datetime
 
 from agents.agent_core import AgentCore
 from agents.email_qualifier import EmailQualifier
@@ -46,10 +47,29 @@ def qualify_lead(lead_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
                 print(f"  {key}: {value}")
         
         # Save to memory
-        memory_manager.save_qualification(lead_id, qualification_result)
+        # Ensure we save as dict for compatibility
+        if hasattr(qualification_result, 'model_dump'):
+            qualification_dict = qualification_result.model_dump()
+        else:
+            qualification_dict = qualification_result
+        # Ensure urgency is always set to a valid value
+        urgency_val = qualification_dict.get('urgency')
+        if not urgency_val or urgency_val.lower() not in ['low', 'medium', 'high', 'urgent']:
+            qualification_dict['urgency'] = 'not specified'
+        memory_manager.save_qualification(lead_id, qualification_dict)
         
         # Also save lead info if not exists
         memory_manager.save_lead(lead_id, lead_data)
+        
+        # Log interaction event for timeline persistence
+        event_data = {
+            "priority": qualification_dict.get("priority"),
+            "lead_score": qualification_dict.get("lead_score"),
+            "reasoning": qualification_dict.get("reasoning"),
+            "next_action": qualification_dict.get("next_action"),
+            "timestamp": datetime.now().isoformat()
+        }
+        memory_manager.add_interaction(lead_id, "qualification_updated", event_data)
         
         print(f"\nQualification saved to memory for lead: {lead_id}")
         
@@ -146,6 +166,13 @@ def demo_qualification():
             print(f"  Urgency: {qualification.get('urgency', 'N/A')}")
             print(f"  Next Action: {qualification.get('next_action', 'N/A')}")
             print(f"  Reasoning: {qualification.get('reasoning', 'N/A')[:100]}...")
+            # Print signals/factors and confidence improvements if present
+            signals = qualification.get('signals')
+            if signals:
+                print(f"  Signals/Factors: {signals}")
+            conf_impr = qualification.get('confidence_improvements')
+            if conf_impr:
+                print(f"  Confidence Improvements: {conf_impr}")
     
     # Show memory contents
     print("\n" + "=" * 50)
