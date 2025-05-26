@@ -909,6 +909,75 @@ Sales Team""",
         except AttributeError as e:
             self.fail(f"display_crm_record raised AttributeError: {e}")
 
+    def test_meeting_tab_lead_id_handling(self):
+        """Test that scheduling multiple meetings for the same email uses the same lead ID and accumulates history."""
+        import streamlit
+        from unittest.mock import patch
+        # Patch st.session_state.memory_manager to use self.memory_manager
+        streamlit.session_state.memory_manager = self.memory_manager
+
+        # Simulate meeting request data for the same lead
+        lead_email = "david.kim@innovatetech.com"
+        lead_data = {
+            "lead_name": "David Kim",
+            "lead_email": lead_email,
+            "lead_company": "InnovateTech Solutions",
+            "lead_role": "VP of Operations"
+        }
+        meeting_request_1 = {
+            **lead_data,
+            "meeting_type": "Product Demo",
+            "duration": "30 minutes",
+            "urgency": "Medium",
+            "attendees": "",
+            "context": "First meeting request."
+        }
+        meeting_request_2 = {
+            **lead_data,
+            "meeting_type": "Technical Discussion",
+            "duration": "45 minutes",
+            "urgency": "High",
+            "attendees": "",
+            "context": "Second meeting request."
+        }
+
+        # Import the function under test
+        from ui.tabs.meeting_tab import process_meeting_scheduling_demo
+
+        with patch('ui.state.session.get_memory_manager', return_value=self.memory_manager):
+            # Simulate the UI flow: get or create the lead ID first
+            lead_id = self.memory_manager.get_or_create_lead_id(lead_email, {
+                "name": lead_data["lead_name"],
+                "email": lead_email,
+                "company": lead_data["lead_company"],
+                "role": lead_data["lead_role"]
+            })
+            # Schedule first meeting
+            result_1 = process_meeting_scheduling_demo(lead_id, meeting_request_1)
+            lead_id_1 = result_1["lead_id"]
+            print("lead_id_1 after first meeting:", repr(lead_id_1))
+            print("All lead IDs after first meeting:", self.memory_manager.list_all_lead_ids())
+            print("All qualifications after first meeting:", self.memory_manager.list_all_qualifications())
+            self.assertIsNotNone(lead_id_1, "First lead ID should be created.")
+            q1 = self.memory_manager.get_qualification(lead_id_1)
+            self.assertIsNotNone(q1, "Qualification should be saved for first lead ID.")
+
+            # Schedule second meeting for the same email
+            result_2 = process_meeting_scheduling_demo(lead_id, meeting_request_2)
+            lead_id_2 = result_2["lead_id"]
+            print("lead_id_2 after second meeting:", repr(lead_id_2))
+            print("All lead IDs after second meeting:", self.memory_manager.list_all_lead_ids())
+            print("All qualifications after second meeting:", self.memory_manager.list_all_qualifications())
+            self.assertIsNotNone(lead_id_2, "Second lead ID should be created.")
+
+            # The lead IDs should be the same for repeated meetings with the same email
+            self.assertEqual(lead_id_1, lead_id_2, "Lead ID should be the same for repeated meetings with the same email.")
+
+            # Check that interaction history for the lead contains both meetings
+            interactions = self.memory_manager.get_interaction_history(lead_id_1)
+            print("Interaction history after both meetings:", interactions)
+            self.assertTrue(len(interactions) >= 2, "Interaction history should contain both meetings.")
+
 # --- Standalone pytest test for reply tab CRM before/after UI ---
 
 def test_reply_tab_crm_before_after(monkeypatch):

@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from unittest.mock import patch, Mock
 
-from ui.state.session import get_memory_manager, get_next_lead_id, store_demo_result
+from ui.state.session import get_memory_manager, store_demo_result
 from ui.components.agent_visualizer import display_agent_reasoning, display_agent_timeline
 from ui.components.crm_viewer import display_crm_record
 from ui.components.email_display import display_email_output
@@ -226,8 +226,15 @@ def render_meeting_tab():
             "context": meeting_context
         }
         
-        # Generate unique lead ID
-        lead_id = get_next_lead_id()
+        # Use DB-backed lead_id lookup/creation (robust, email-based)
+        memory_manager = get_memory_manager()
+        lead_data = {
+            "name": lead_name,
+            "email": lead_email,
+            "company": lead_company,
+            "role": lead_role
+        }
+        lead_id = memory_manager.get_or_create_lead_id(lead_email, lead_data)
         
         # Process the meeting scheduling
         with st.spinner("🤖 AI Agent is scheduling the meeting..."):
@@ -301,10 +308,10 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
         Dictionary containing scheduling results
     """
     memory_manager = get_memory_manager()
-    
+
     # Import the scheduling function
     from workflows.run_schedule_meeting import analyze_meeting_request, build_context_from_meeting_request
-    
+
     # Create a mock request data structure that matches what the experiments module expects
     mock_request_data = {
         "lead_id": lead_id,
@@ -313,11 +320,11 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "urgency": meeting_request.get('urgency', 'Medium').lower()
     }
-    
+
     # Automatically qualify the lead when they schedule a meeting
     # This is a strong buying signal and should result in a high lead score
     lead_qualification = calculate_meeting_qualification(meeting_request)
-    
+
     # Ensure lead has a qualification before scheduling meeting
     if not memory_manager.has_qualification(lead_id):
         # Create initial qualification for new leads
@@ -328,14 +335,13 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
         updated_qualification = existing_qualification.copy() if existing_qualification else {}
         updated_qualification.update(lead_qualification)
         memory_manager.save_qualification(lead_id, updated_qualification)
-    
+
     # Generate mock scheduling response
     mock_response = generate_mock_scheduling_response(meeting_request)
-    
+
     # Patch the LLM chain to return our mock response
-    with patch('workflows.run_schedule_meeting.get_llm_chain_for_meeting_scheduling') as mock_chain, \
+    with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_chain, \
          patch('workflows.run_schedule_meeting.memory_manager', memory_manager):
-        
         # Add lead to mock CRM so build_context_from_meeting_request can find it
         from workflows.run_schedule_meeting import mock_crm_data
         mock_crm_data[lead_id] = {
@@ -346,15 +352,15 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
             "meeting_status": "none",
             "last_interaction": "2024-01-10 12:00:00"
         }
-        
+
         mock_llm = Mock()
         mock_llm.run.return_value = mock_response
         mock_chain.return_value = mock_llm
-        
+
         # Build context and analyze the meeting request
         context = build_context_from_meeting_request(mock_request_data, memory_manager)
         scheduling_result = analyze_meeting_request(context)
-    
+
     # Add lead score to scheduling result for display
     final_qualification = memory_manager.get_qualification(lead_id)
     if final_qualification:
@@ -363,17 +369,31 @@ def process_meeting_scheduling_demo(lead_id: str, meeting_request: Dict[str, Any
             'priority': final_qualification.get('priority', 'medium'),
             'reasoning': final_qualification.get('reasoning', 'Meeting scheduled')
         })
-    
+
+    # Log the meeting as an interaction
+    memory_manager.add_interaction(
+        lead_id,
+        "meeting_scheduled",
+        {
+            "meeting_type": meeting_request.get("meeting_type"),
+            "duration": meeting_request.get("duration"),
+            "urgency": meeting_request.get("urgency"),
+            "context": meeting_request.get("context"),
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
     # Generate calendar invitation
     calendar_invite = generate_calendar_invitation(meeting_request, scheduling_result)
-    
+
     # Generate confirmation email
     confirmation_email = generate_confirmation_email(meeting_request, scheduling_result)
-    
+
     # Get interaction history
     interactions = memory_manager.get_interaction_history(lead_id)
-    
+
     return {
+        'lead_id': lead_id,
         'meeting_request': meeting_request,
         'scheduling_result': scheduling_result,
         'calendar_invite': calendar_invite,

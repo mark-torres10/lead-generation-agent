@@ -14,6 +14,7 @@ class MemoryManager:
     # Lead operations
     def save_lead(self, lead_id: str, lead_data: Dict[str, Any]) -> None:
         """Save or update lead information."""
+        print(f"[DEBUG] save_lead called with lead_id={lead_id}, lead_data={lead_data}")
         data = {
             "lead_id": lead_id,
             "name": lead_data.get("name"),
@@ -21,6 +22,7 @@ class MemoryManager:
             "email": lead_data.get("email"),
             "status": lead_data.get("status", "new")
         }
+        print(f"[DEBUG] save_lead inserting/updating: {data}")
         self.store.insert_or_update("leads", data, "lead_id")
     
     def get_lead(self, lead_id: str) -> Optional[Dict[str, Any]]:
@@ -41,10 +43,12 @@ class MemoryManager:
         """Return the lead_id for a given email, creating a new lead if not present."""
         lead = self.get_lead_by_email(email)
         if lead:
+            print(f"[DEBUG] get_or_create_lead_id found existing lead: {lead}")
             return lead["lead_id"]
         # Create new lead_id (use a UUID for uniqueness)
         import uuid
         lead_id = f"lead_{uuid.uuid4().hex[:12]}"
+        print(f"[DEBUG] get_or_create_lead_id creating new lead_id: {lead_id} for email: {email}")
         data = lead_data.copy()
         data["lead_id"] = lead_id
         data["email"] = email
@@ -249,6 +253,15 @@ class MemoryManager:
         def get_sort_key(rec):
             return rec.get("updated_at") or rec.get("created_at") or ""
         return sorted(records, key=get_sort_key)
+
+    def list_all_lead_ids(self) -> List[str]:
+        """Return all lead IDs in the database."""
+        leads = self.get_all_leads()
+        return [lead["lead_id"] for lead in leads if "lead_id" in lead]
+
+    def list_all_qualifications(self) -> List[Dict[str, Any]]:
+        """Return all qualifications in the database."""
+        return self.store.execute_query("SELECT * FROM lead_qualifications ORDER BY updated_at DESC")
 
 
 # Global instance for backward compatibility
