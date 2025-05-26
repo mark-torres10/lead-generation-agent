@@ -14,6 +14,7 @@ from ui.components.email_display import display_email_output
 from agents.models import LeadQualificationResult
 from integrations.google.email_manager import EmailManager
 from integrations.slack_manager import SlackManager
+from integrations.zoho_manager import ZohoManager
 
 
 def render_qualify_tab():
@@ -122,19 +123,25 @@ def render_qualify_tab():
             "role": role or "Unknown Role",
             "message": message
         }
-        
+        # Add Zoho source field
+        zoho_lead_data = form_data.copy()
+        zoho_lead_data["source"] = "Qualification Inbound"
         # Generate unique lead ID
         lead_id = get_next_lead_id()
-        
         # Process the qualification
         with st.spinner("🤖 AI Agent is processing the lead..."):
             result = process_qualification_demo(lead_id, form_data)
-        
         # Store both result and form_data for display and testability
         store_demo_result("qualify", lead_id, {"result": result, "form_data": form_data})
-        
         # --- EMAIL SENDING LOGIC ---
         send_qualification_email(form_data, result)
+        # --- ZOHO LEAD CREATION LOGIC ---
+        try:
+            zoho_manager = ZohoManager()
+            zoho_manager.create_lead(zoho_lead_data)
+            st.success("Lead created in Zoho CRM!")
+        except Exception as e:
+            st.error(f"Failed to create lead in Zoho CRM: {e}")
         # --- SLACK NOTIFICATION LOGIC ---
         try:
             slack = SlackManager()
@@ -146,7 +153,6 @@ def render_qualify_tab():
             )
         except Exception as e:
             print(f"Error sending Slack notification: {e}")
-        
         # Display results
         display_qualification_results(lead_id, form_data, result)
     
