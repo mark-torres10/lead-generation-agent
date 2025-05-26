@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from unittest.mock import patch, MagicMock
+import pytest
 
 from workflows.run_reply_intent import (
     build_context_from_reply,
@@ -12,6 +13,7 @@ from workflows.run_reply_intent import (
 from agents.reply_analyzer import ReplyAnalyzer
 from agents.agent_core import AgentCore
 from memory.memory_manager import memory_manager
+from ui.tabs.reply_tab import determine_demo_intent, generate_mock_intent_response
 
 class TestReplyIntentAnalysis(unittest.TestCase):
     """Test suite for reply intent analysis functionality."""
@@ -166,6 +168,30 @@ Intent: meeting_request
         # reply_001 belongs to lead_001, try to use it for lead_002
         result = handle_reply("lead_002", "reply_001")
         self.assertIsNone(result)
+
+def test_determine_demo_intent_cases():
+    cases = [
+        ("I'm very interested in your solution!", 'interested'),
+        ("Can we schedule a meeting next week?", 'meeting_request'),
+        ("Can you send more information about pricing?", 'info_request'),
+        ("Not interested, please remove me from your list.", 'not_interested'),
+        ("I have some concerns about integration.", 'objection'),
+        ("Thank you for your email.", 'neutral'),
+    ]
+    for text, expected in cases:
+        assert determine_demo_intent(text) == expected
+
+
+def test_generate_mock_intent_response_fields():
+    lead_data = {"company": "TestCo"}
+    for intent in ['interested', 'meeting_request', 'info_request', 'neutral', 'objection', 'not_interested']:
+        reply = f"This is a {intent} reply."
+        response = generate_mock_intent_response(intent, reply, lead_data)
+        # Check that all required fields are present in the response string
+        for field in ["DISPOSITION:", "CONFIDENCE:", "SENTIMENT:", "URGENCY:", "REASONING:", "NEXT_ACTION:", "FOLLOW_UP_TIMING:"]:
+            assert field in response
+        # Check that the company name is in the reasoning
+        assert "TestCo" in response
 
 if __name__ == '__main__':
     unittest.main() 

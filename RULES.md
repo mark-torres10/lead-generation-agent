@@ -26,6 +26,7 @@
 - **Integration Tests**: Test critical paths end-to-end with real components
 - **Property-Based Testing**: Use for complex business logic validation
 - **Testing against expected results**: Write the expected output and save it to a "expected_result" variable. Then have your assertions, where relevant, test directly against the "expected_result" to see if the content is correct. This helps with improving readability of tests.
+- **Activate conda environment**: Activate the conda environment for the repo. For this current repo, the name of the conda env is 'lead-generation-agent'.
 
 ## Code Style & Readability
 
@@ -57,3 +58,4 @@
 ## Debugging
 
 - **Evaluate current behaviors**: Evaluate the current behaviors. Note one by one each observed behavior and if it is intended or not. Make a note of what results are incorrect and what the intended results are. Then, for the incorrect results, make an action plan of how to fix those results and include what the expected results should look like instead.
+- **Diagnose the bug and create a plan**: When asked by the user to fix the bug, propose a plan to fix it comprehensively, and propose how to create tests to ensure that the bug is fixed. Return this proposed plan before actually making any changes.

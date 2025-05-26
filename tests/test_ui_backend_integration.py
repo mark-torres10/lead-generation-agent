@@ -700,6 +700,276 @@ Sales Team""",
         finally:
             workflows.run_qualification.qualify_lead = original_qualify_lead
 
+    def test_no_get_llm_chain_attribute_error_on_reply_analysis(self):
+        """Ensure no AttributeError for get_llm_chain occurs during reply analysis workflow."""
+        lead_id = "test_reply_attr_error"
+        lead_data = {
+            "name": "Test User",
+            "email": "test.user@example.com",
+            "company": "TestCo"
+        }
+        reply_content = "I'm interested in a demo. Can we schedule a call next week?"
+        from ui.tabs.reply_tab import process_reply_analysis_demo
+        try:
+            result = process_reply_analysis_demo(lead_id, lead_data, reply_content)
+        except AttributeError as e:
+            self.fail(f"AttributeError occurred: {e}")
+        # If no exception, pass
+        self.assertIsNotNone(result)
+
+    def test_reply_analysis_result_always_model(self):
+        """Test that process_reply_analysis_demo always returns a ReplyAnalysisResult, even if workflow returns a dict."""
+        lead_id = "test_reply_model"
+        lead_data = {
+            "name": "Test User",
+            "email": "test.user@example.com",
+            "company": "TestCo"
+        }
+        reply_content = "This should trigger a fallback dict result."
+        from ui.tabs.reply_tab import process_reply_analysis_demo
+        # Patch analyze_reply_intent to return a dict simulating an error/fallback
+        import workflows.run_reply_intent
+        original_analyze = workflows.run_reply_intent.analyze_reply_intent
+        def mock_analyze_reply_intent(context):
+            return {"reasoning": "Simulated error", "next_action": "Manual review required"}  # missing required fields
+        workflows.run_reply_intent.analyze_reply_intent = mock_analyze_reply_intent
+        try:
+            result = process_reply_analysis_demo(lead_id, lead_data, reply_content)
+            # Should be a model with attribute access
+            self.assertTrue(hasattr(result, "disposition"))
+            self.assertTrue(hasattr(result, "reasoning"))
+            self.assertEqual(result.reasoning, "Simulated error")
+            self.assertEqual(result.next_action, "Manual review required")
+        finally:
+            workflows.run_reply_intent.analyze_reply_intent = original_analyze
+
+    def test_display_reply_analysis_results_handles_missing_timeline(self):
+        """Test that display_reply_analysis_results does not raise if timeline is missing from ReplyAnalysisResult."""
+        from ui.tabs.reply_tab import display_reply_analysis_results
+        from agents.models import ReplyAnalysisResult
+        import sys
+        # Patch Streamlit and display functions to no-op
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        # Patch display functions
+        import ui.components.agent_visualizer
+        import ui.components.crm_viewer
+        import ui.components.email_display
+        ui.components.agent_visualizer.display_agent_reasoning = lambda *a, **k: None
+        ui.components.agent_visualizer.display_agent_timeline = lambda *a, **k: None
+        ui.components.crm_viewer.display_crm_record = lambda *a, **k: None
+        ui.components.email_display.display_email_output = lambda *a, **k: None
+        # Minimal result with no timeline
+        result = ReplyAnalysisResult(
+            disposition="engaged",
+            confidence=90,
+            sentiment="positive",
+            urgency="high",
+            reasoning="Test reasoning",
+            next_action="Test action",
+            follow_up_timing="immediate",
+            intent="meeting_request"
+        )
+        try:
+            display_reply_analysis_results("test_lead_id", {"name": "Test User", "company": "TestCo"}, "Test reply content", result)
+        except AttributeError as e:
+            self.fail(f"display_reply_analysis_results raised AttributeError: {e}")
+
+    def test_display_reply_analysis_results_handles_missing_response_email(self):
+        """Test that display_reply_analysis_results does not raise if response_email is missing from ReplyAnalysisResult."""
+        from ui.tabs.reply_tab import display_reply_analysis_results
+        from agents.models import ReplyAnalysisResult
+        import sys
+        # Patch Streamlit and display functions to no-op
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        # Patch display functions
+        import ui.components.agent_visualizer
+        import ui.components.crm_viewer
+        import ui.components.email_display
+        ui.components.agent_visualizer.display_agent_reasoning = lambda *a, **k: None
+        ui.components.agent_visualizer.display_agent_timeline = lambda *a, **k: None
+        ui.components.crm_viewer.display_crm_record = lambda *a, **k: None
+        ui.components.email_display.display_email_output = lambda *a, **k: None
+        # Minimal result with no response_email
+        result = ReplyAnalysisResult(
+            disposition="engaged",
+            confidence=90,
+            sentiment="positive",
+            urgency="high",
+            reasoning="Test reasoning",
+            next_action="Test action",
+            follow_up_timing="immediate",
+            intent="meeting_request"
+        )
+        try:
+            display_reply_analysis_results("test_lead_id", {"name": "Test User", "company": "TestCo"}, "Test reply content", result)
+        except AttributeError as e:
+            self.fail(f"display_reply_analysis_results raised AttributeError: {e}")
+
+    def test_display_reply_analysis_results_handles_missing_interactions(self):
+        """Test that display_reply_analysis_results does not raise if interactions is missing from ReplyAnalysisResult."""
+        from ui.tabs.reply_tab import display_reply_analysis_results
+        from agents.models import ReplyAnalysisResult
+        import sys
+        # Patch Streamlit and display functions to no-op
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        # Patch display functions
+        import ui.components.agent_visualizer
+        import ui.components.crm_viewer
+        import ui.components.email_display
+        ui.components.agent_visualizer.display_agent_reasoning = lambda *a, **k: None
+        ui.components.agent_visualizer.display_agent_timeline = lambda *a, **k: None
+        ui.components.crm_viewer.display_crm_record = lambda *a, **k: None
+        ui.components.email_display.display_email_output = lambda *a, **k: None
+        # Minimal result with no interactions
+        result = ReplyAnalysisResult(
+            disposition="engaged",
+            confidence=90,
+            sentiment="positive",
+            urgency="high",
+            reasoning="Test reasoning",
+            next_action="Test action",
+            follow_up_timing="immediate",
+            intent="meeting_request"
+        )
+        try:
+            display_reply_analysis_results("test_lead_id", {"name": "Test User", "company": "TestCo"}, "Test reply content", result)
+        except AttributeError as e:
+            self.fail(f"display_reply_analysis_results raised AttributeError: {e}")
+
+    def test_display_crm_record_accepts_replyanalysisresult(self):
+        """Test that display_crm_record works when passed a ReplyAnalysisResult model (converted to dict)."""
+        from ui.components.crm_viewer import display_crm_record
+        from agents.models import ReplyAnalysisResult
+        import sys
+        # Patch Streamlit and display functions to no-op
+        class MockCol:
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb): return False
+        def mock_columns(n, *a, **k):
+            if isinstance(n, (list, tuple)):
+                return [MockCol() for _ in range(len(n))]
+            return [MockCol() for _ in range(n)]
+        sys.modules["streamlit"].success = lambda *a, **k: None
+        sys.modules["streamlit"].markdown = lambda *a, **k: None
+        sys.modules["streamlit"].subheader = lambda *a, **k: None
+        sys.modules["streamlit"].columns = mock_columns
+        import streamlit as st
+        # Minimal result with no interactions
+        result = ReplyAnalysisResult(
+            disposition="engaged",
+            confidence=90,
+            sentiment="positive",
+            urgency="high",
+            reasoning="Test reasoning",
+            next_action="Test action",
+            follow_up_timing="immediate",
+            intent="meeting_request"
+        )
+        lead_data = {"name": "Test User", "company": "TestCo"}
+        try:
+            # Convert to dict as in the UI fix
+            if hasattr(result, 'model_dump'):
+                qualification_dict = result.model_dump()
+            else:
+                qualification_dict = result.dict() if hasattr(result, 'dict') else dict(result)
+            display_crm_record(lead_data, qualification_dict, None, title="Updated Lead Record")
+        except AttributeError as e:
+            self.fail(f"display_crm_record raised AttributeError: {e}")
+
+# --- Standalone pytest test for reply tab CRM before/after UI ---
+
+def test_reply_tab_crm_before_after(monkeypatch):
+    """Test that the reply tab displays both before and after CRM states without error."""
+    import types
+    import ui.tabs.reply_tab as reply_tab
+    from agents.models import ReplyAnalysisResult
+
+    # Mock Streamlit functions
+    monkeypatch.setattr(reply_tab.st, "success", lambda *a, **k: None)
+    monkeypatch.setattr(reply_tab.st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(reply_tab.st, "text_area", lambda *a, **k: None)
+    # Patch st.expander with a context manager mock
+    class MockExpander:
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, exc_tb): return False
+    monkeypatch.setattr(reply_tab.st, "expander", lambda *a, **k: MockExpander())
+    monkeypatch.setattr(reply_tab, "display_agent_reasoning", lambda *a, **k: None)
+    monkeypatch.setattr(reply_tab, "display_agent_timeline", lambda *a, **k: None)
+    monkeypatch.setattr(reply_tab, "display_email_output", lambda *a, **k: None)
+    # Patch display_crm_record to record calls
+    calls = []
+    def fake_display_crm_record(*args, **kwargs):
+        calls.append((args, kwargs))
+    monkeypatch.setattr(reply_tab, "display_crm_record", fake_display_crm_record)
+    # Patch st.columns to return two context managers
+    class DummyCol:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def subheader(self, *a, **k): pass
+    monkeypatch.setattr(reply_tab.st, "columns", lambda n: (DummyCol(), DummyCol()))
+    # Patch st.button
+    monkeypatch.setattr(reply_tab.st, "button", lambda *a, **k: False)
+
+    lead_id = "test-lead"
+    lead_data = {"name": "Test Lead", "company": "TestCo"}
+    reply_content = "Test reply"
+    result = ReplyAnalysisResult(
+        disposition="engaged",
+        confidence=90,
+        sentiment="positive",
+        urgency="high",
+        reasoning="Test reasoning",
+        next_action="Follow up",
+        follow_up_timing="immediate",
+        intent="interested",
+        lead_score=85,
+        priority="high"
+    )
+    # Should not raise
+    reply_tab.display_reply_analysis_results(lead_id, lead_data, reply_content, result)
+    # Should call display_crm_record twice (before and after)
+    assert len(calls) == 2
+    before_args, after_args = calls
+    # Before state should have lead_score 0 and priority 'unqualified'
+    assert before_args[0][1]["lead_score"] == 0
+    assert before_args[0][1]["priority"] == "unqualified"
+    # After state should have lead_score 85 and priority 'high'
+    assert after_args[0][1]["lead_score"] == 85
+    assert after_args[0][1]["priority"] == "high"
+
 
 if __name__ == "__main__":
     unittest.main() 

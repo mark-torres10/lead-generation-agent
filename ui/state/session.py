@@ -4,10 +4,10 @@ Handles memory manager initialization and form data persistence.
 """
 
 import streamlit as st
-import tempfile
 import os
 from memory.memory_manager import MemoryManager
 from memory.memory_store import SQLiteMemoryStore
+import time
 
 
 def initialize_session_state():
@@ -15,17 +15,14 @@ def initialize_session_state():
     
     # Initialize memory manager if not exists
     if 'memory_manager' not in st.session_state:
-        # Create temporary database for demo
-        temp_dir = tempfile.mkdtemp()
-        db_path = os.path.join(temp_dir, "demo.db")
-        
-        # Store paths for cleanup
-        st.session_state.temp_dir = temp_dir
+        # Use persistent DB path for the app run
+        os.makedirs('data/tmp', exist_ok=True)
+        db_path = f"data/tmp/app_db_{int(time.time())}.db"
         st.session_state.db_path = db_path
-        
-        # Initialize memory components
         memory_store = SQLiteMemoryStore(db_path)
         st.session_state.memory_manager = MemoryManager(memory_store)
+    else:
+        print(f"[DEBUG] Existing MemoryManager at {st.session_state.db_path}, id={id(st.session_state.memory_manager)}")
     
     # Initialize form data storage
     if 'form_data' not in st.session_state:
@@ -79,4 +76,4 @@ def clear_demo_results(tab_name: str = None):
     if tab_name:
         st.session_state.demo_results[tab_name] = {}
     else:
-        st.session_state.demo_results = {} 
+        st.session_state.demo_results = {}

@@ -9,46 +9,74 @@ from typing import Dict, Any, List
 
 def display_agent_reasoning(reasoning_data: Dict[str, Any], title: str = "🧠 Agent's Thought Process"):
     """
-    Display agent reasoning in a structured format.
-    
+    Display agent reasoning in a structured, visually appealing format for both qualification and reply analysis.
     Args:
-        reasoning_data: Dictionary containing reasoning information
+        reasoning_data: Dictionary or model containing reasoning information
         title: Title for the reasoning section
     """
     st.subheader(title)
-    
-    with st.container():
-        # Create columns for better layout
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Main reasoning text
-            if "reasoning" in reasoning_data:
-                st.markdown("**Analysis:**")
-                st.info(reasoning_data["reasoning"])
-            
-            # Extracted information
-            if "extracted_info" in reasoning_data:
-                st.markdown("**Extracted Information:**")
-                extracted = reasoning_data["extracted_info"]
-                for key, value in extracted.items():
-                    st.write(f"• **{key.replace('_', ' ').title()}:** {value}")
-        
-        with col2:
-            # Key metrics and scores
-            if "lead_score" in reasoning_data:
-                st.metric("Lead Score", f"{reasoning_data['lead_score']}/100")
-            
-            if "priority" in reasoning_data:
-                priority_color = {
-                    "high": "🔴",
-                    "medium": "🟡", 
-                    "low": "🟢"
-                }.get(reasoning_data["priority"].lower(), "⚪")
-                st.metric("Priority", f"{priority_color} {reasoning_data['priority'].title()}")
-            
-            if "confidence" in reasoning_data:
-                st.metric("Confidence", f"{reasoning_data['confidence']}%")
+
+    # Try to support both dict and pydantic model
+    if hasattr(reasoning_data, 'model_dump'):
+        data = reasoning_data.model_dump()
+    elif hasattr(reasoning_data, 'dict'):
+        data = reasoning_data.dict()
+    else:
+        data = dict(reasoning_data)
+
+    # Main summary card
+    st.markdown("""
+    <div style='background: #f8f9fa; border-radius: 10px; padding: 18px 20px; margin-bottom: 12px; box-shadow: 0 1px 4px #e9ecef;'>
+    <b>Summary:</b> {summary}
+    </div>
+    """.format(summary=data.get('reasoning', 'No reasoning provided.')), unsafe_allow_html=True)
+
+    # Key metrics in columns
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+    score = data.get('lead_score', None)
+    score_color = "green" if score is not None and score >= 80 else "orange" if score is not None and score >= 50 else "red"
+    priority_val = data.get('priority', None)
+    priority = str(priority_val).title() if priority_val else "Unknown"
+    priority_emoji = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(priority, "⚪")
+    disposition_val = data.get('disposition', None)
+    disposition = str(disposition_val).title() if disposition_val else "Unknown"
+    confidence = data.get('confidence', None)
+    sentiment_val = data.get('sentiment', None)
+    sentiment = str(sentiment_val).title() if sentiment_val else "Unknown"
+    urgency_val = data.get('urgency', None)
+    valid_urgencies = ["Low", "Medium", "High", "Urgent"]
+    if not urgency_val or str(urgency_val).strip().lower() == "not specified" or str(urgency_val).title() not in valid_urgencies:
+        urgency = "Not specified"
+    else:
+        urgency = str(urgency_val).title()
+    intent_val = data.get('intent', None)
+    intent = str(intent_val).replace("_", " ").title() if intent_val else "Unknown"
+    next_action = data.get('next_action', None)
+    follow_up = data.get('follow_up_timing', None)
+
+    with col1:
+        if score is not None:
+            st.metric("Lead Score", f"{score}/100")
+            st.markdown(f"<span style='color:{score_color}; font-weight:bold;'>{score}/100</span>", unsafe_allow_html=True)
+        st.metric("Priority", f"{priority_emoji} {priority}")
+    with col2:
+        st.metric("Disposition", disposition)
+        if confidence is not None:
+            st.metric("Confidence", f"{confidence}%")
+    with col3:
+        st.metric("Sentiment", sentiment)
+        st.metric("Urgency", urgency)
+    with col4:
+        st.metric("Intent", intent)
+        if next_action:
+            st.markdown(f"<b>Next Action:</b> {next_action}", unsafe_allow_html=True)
+        if follow_up:
+            st.markdown(f"<b>Follow-up Timing:</b> {follow_up}", unsafe_allow_html=True)
+
+    # Progressive disclosure for full details
+    with st.expander("Show all agent analysis fields"):
+        for k, v in data.items():
+            st.write(f"**{k.replace('_', ' ').title()}:** {v}")
 
 
 def display_agent_timeline(steps: List[Dict[str, Any]], title: str = "📊 Agent Activity Timeline"):

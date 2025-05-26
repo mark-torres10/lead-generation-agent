@@ -15,8 +15,7 @@ from agents.models import LeadQualificationResult
 
 
 def render_qualify_tab():
-    """Render the contact form qualification tab."""
-    
+    """Render the contact form qualification tab."""    
     st.markdown("""
     ### 📝 Contact Us → Follow-up Demo
     

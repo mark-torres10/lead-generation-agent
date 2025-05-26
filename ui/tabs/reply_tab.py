@@ -7,16 +7,14 @@ import streamlit as st
 from typing import Dict, Any, List
 from unittest.mock import patch, Mock
 
-from ui.state.session import get_memory_manager, get_next_lead_id, store_demo_result
-from ui.components.agent_visualizer import display_agent_reasoning, display_agent_timeline
-from ui.components.crm_viewer import display_crm_record
+from ui.state.session import get_memory_manager, store_demo_result
+from ui.components.agent_visualizer import display_agent_timeline
 from ui.components.email_display import display_email_output
 from agents.models import ReplyAnalysisResult
 
 
 def render_reply_tab():
     """Render the reply analysis tab."""
-    
     st.markdown("""
     ### 📧 Reply Analysis → Response Demo
     
@@ -171,24 +169,24 @@ Sarah"""
     if submitted and reply_content and lead_name and lead_email:
         # Clear sample data after submission
         st.session_state.reply_sample_data = {}
-        
         # Create lead data
         lead_data = {
             "name": lead_name,
             "email": lead_email,
             "company": lead_company or "Unknown Company"
         }
-        
-        # Generate unique lead ID
-        lead_id = get_next_lead_id()
-        
+        # Use DB-backed lead_id lookup/creation
+        memory_manager = get_memory_manager()
+        lead_id = memory_manager.get_or_create_lead_id(lead_email, lead_data)
         # Process the reply analysis
         with st.spinner("🤖 AI Agent is analyzing the reply..."):
             result = process_reply_analysis_demo(lead_id, lead_data, reply_content)
-        
-        # Store result for display
-        store_demo_result("reply", lead_id, result)
-        
+        # Store result for display (store as dict for consistency)
+        store_demo_result("reply", lead_id, {
+            "lead_data": lead_data,
+            "reply_content": reply_content,
+            "result": result
+        })
         # Display results
         display_reply_analysis_results(lead_id, lead_data, reply_content, result)
     
@@ -202,10 +200,18 @@ Sarah"""
             latest_lead_id = max(results.keys())
             latest_result = results[latest_lead_id]
             
-            lead_data = latest_result.get('lead_data', {})
-            reply_content = latest_result.get('reply_content', '')
+            # Handle both dict and ReplyAnalysisResult cases
+            if isinstance(latest_result, dict):
+                lead_data = latest_result.get('lead_data', {})
+                reply_content = latest_result.get('reply_content', '')
+                result_obj = latest_result.get('result', latest_result)
+            else:
+                # It's a ReplyAnalysisResult object
+                lead_data = getattr(latest_result, 'lead_data', {})
+                reply_content = getattr(latest_result, 'reply_content', '')
+                result_obj = latest_result
             
-            display_reply_analysis_results(latest_lead_id, lead_data, reply_content, latest_result)
+            display_reply_analysis_results(latest_lead_id, lead_data, reply_content, result_obj)
 
 
 def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_content: str) -> ReplyAnalysisResult:
@@ -220,40 +226,46 @@ def process_reply_analysis_demo(lead_id: str, lead_data: Dict[str, Any], reply_c
     """
     memory_manager = get_memory_manager()
     from workflows.run_reply_intent import analyze_reply_intent
-    # Patch the LLM chain to return our mock response
-    with patch('workflows.run_reply_intent.get_llm_chain') as mock_chain, \
+    from agents.models import ReplyAnalysisResult
+
+    # Determine intent and generate a mock LLM response based on the reply content
+    intent_category = determine_demo_intent(reply_content)
+    mock_llm_response = generate_mock_intent_response(intent_category, reply_content, lead_data)
+
+    # Patch the LLM chain to return our dynamic mock response
+    with patch('agents.agent_core.AgentCore.create_llm_chain') as mock_chain, \
          patch('workflows.run_reply_intent.memory_manager', memory_manager):
         mock_llm = Mock()
-        mock_llm.run.return_value = """
-        Disposition: engaged
-        Confidence: 95
-        Sentiment: positive
-        Urgency: high
-        Reasoning: The lead explicitly states interest and requests a call
-        Next Action: Schedule a discovery call within 24 hours
-        Follow Up Timing: immediate
-        Intent: meeting_request
-        """
+        mock_llm.run.return_value = mock_llm_response
         mock_chain.return_value = mock_llm
         analysis = analyze_reply_intent({"lead_id": lead_id, **lead_data, "reply_text": reply_content})
+    # Always return a ReplyAnalysisResult for UI safety
+    if isinstance(analysis, dict):
+        # Fill required fields with defaults if missing
+        defaults = dict(
+            disposition="maybe", confidence=50, sentiment="neutral", urgency="medium", reasoning="No reasoning provided", next_action="Manual review required", follow_up_timing="1-week", intent="neutral"
+        )
+        for k, v in defaults.items():
+            analysis.setdefault(k, v)
+        analysis = ReplyAnalysisResult(**analysis)
     return analysis
 
 
 def determine_demo_intent(reply_content: str) -> str:
-    """Determine intent category based on reply content for demo purposes."""
-    
+    """Determine intent category based on reply content for demo purposes.
+    Order of checks is important: check negative/edge cases before positive substrings to avoid misclassification."""
     reply_lower = reply_content.lower()
-    
-    if any(word in reply_lower for word in ['interested', 'sounds great', 'love to', 'perfect timing', 'exactly what we need']):
-        return 'interested'
-    elif any(word in reply_lower for word in ['schedule', 'meeting', 'call', 'demo', 'available']):
-        return 'meeting_request'
-    elif any(word in reply_lower for word in ['pricing', 'cost', 'features', 'requirements', 'more information']):
-        return 'info_request'
-    elif any(word in reply_lower for word in ['not interested', 'remove me', 'unsubscribe', 'not looking']):
+    # Check negative/edge cases first
+    if any(word in reply_lower for word in ['not interested', 'remove me', 'unsubscribe', 'not looking']):
         return 'not_interested'
     elif any(word in reply_lower for word in ['concern', 'but', 'however', 'worry', 'issue']):
         return 'objection'
+    elif any(word in reply_lower for word in ['pricing', 'cost', 'features', 'requirements', 'more information']):
+        return 'info_request'
+    elif any(word in reply_lower for word in ['schedule', 'meeting', 'call', 'demo', 'available']):
+        return 'meeting_request'
+    elif any(word in reply_lower for word in ['interested', 'sounds great', 'love to', 'perfect timing', 'exactly what we need']):
+        return 'interested'
     else:
         return 'neutral'
 
@@ -525,49 +537,146 @@ def generate_reply_timeline(analysis: ReplyAnalysisResult) -> List[Dict[str, Any
 
 def display_reply_analysis_results(lead_id: str, lead_data: Dict[str, Any], reply_content: str, result: ReplyAnalysisResult):
     """
-    Display the reply analysis results in the UI.
-    Args:
-        lead_id: Unique identifier for the lead
-        lead_data: Lead context data
-        reply_content: The reply text
-        result: ReplyAnalysisResult from the agent
+    Display the reply analysis results in the UI (modern, actionable, visually appealing).
     """
-    st.success(f"Reply from {lead_data['name']} analyzed!")
-    st.markdown(f"**Disposition:** {result.disposition}")
-    st.markdown(f"**Confidence:** {result.confidence}")
-    st.markdown(f"**Sentiment:** {result.sentiment}")
-    st.markdown(f"**Urgency:** {result.urgency}")
-    st.markdown(f"**Reasoning:** {result.reasoning}")
-    st.markdown(f"**Next Action:** {result.next_action}")
-    st.markdown(f"**Follow-up Timing:** {result.follow_up_timing}")
-    st.markdown(f"**Intent:** {result.intent}")
-    if result.lead_score is not None:
-        st.markdown(f"**Lead Score:** {result.lead_score}")
-    if result.priority is not None:
-        st.markdown(f"**Priority:** {result.priority}")
-    
+    # Header Card
+    st.markdown(f"""
+    <div style="background: #f8f9fa; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px #e9ecef;">
+      <div style="display: flex; align-items: center;">
+        <div style="font-size: 2.2em; font-weight: bold; margin-right: 16px;">{lead_data.get('name', 'Lead')}</div>
+        <div style="font-size: 1.2em; color: #6c757d;">{lead_data.get('company', '')}</div>
+        <span style="margin-left: auto; background: #e0f7fa; color: #00796b; border-radius: 8px; padding: 4px 12px; font-size: 0.9em;">Reply Analyzed by AI</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Key Metrics
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+    score = result.lead_score if result.lead_score is not None else 0
+    score_color = "green" if score >= 80 else "orange" if score >= 50 else "red"
+    priority_val = getattr(result, "priority", None)
+    priority = str(priority_val).title() if priority_val else "Unknown"
+    priority_emoji = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(priority, "⚪")
+    disposition_val = getattr(result, "disposition", None)
+    disposition = str(disposition_val).title() if disposition_val else "Unknown"
+    confidence = getattr(result, "confidence", 0)
+    sentiment_val = getattr(result, "sentiment", None)
+    sentiment = str(sentiment_val).title() if sentiment_val else "Unknown"
+    urgency_val = getattr(result, "urgency", None)
+    valid_urgencies = ["Low", "Medium", "High", "Urgent"]
+    if not urgency_val or str(urgency_val).strip().lower() == "not specified" or str(urgency_val).title() not in valid_urgencies:
+        urgency = "Not specified"
+    else:
+        urgency = str(urgency_val).title()
+    intent_val = getattr(result, "intent", None)
+    intent = str(intent_val).replace("_", " ").title() if intent_val else "Unknown"
+    next_action = getattr(result, "next_action", "N/A")
+    follow_up = getattr(result, "follow_up_timing", "N/A")
+
+    with col1:
+        st.metric("Lead Score", f"{score}/100")
+        st.markdown(f"<span style='color:{score_color}; font-weight:bold;'>{score}/100</span>", unsafe_allow_html=True)
+    with col2:
+        st.metric("Priority", f"{priority_emoji} {priority}")
+        st.metric("Disposition", disposition)
+    with col3:
+        st.metric("Confidence", f"{confidence}%")
+        st.metric("Sentiment", sentiment)
+    with col4:
+        st.metric("Urgency", urgency)
+        st.metric("Intent", intent)
+
+    # Action Row
+    st.markdown(f"""
+    <div style="margin: 16px 0; padding: 12px; background: #e3f2fd; border-radius: 8px;">
+      <b>Next Action:</b> <span style="font-size:1.1em;">{next_action}</span>
+      <span style="margin-left: 16px; background: #fff3e0; color: #ef6c00; border-radius: 6px; padding: 2px 10px;">Follow-up: {follow_up}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Value-Add Statement
+    st.info("This reply was automatically analyzed by AI, surfacing actionable next steps and updating the CRM in real time.")
+
+    # Explainability Section
+    with st.expander("🧠 Why did the AI analyze this reply this way?"):
+        st.write(result.reasoning)
+        # Show reasoning and details
+        # (Add more chips or details if available in the future)
+
     # Show original reply
     with st.expander("📨 Original Customer Reply", expanded=False):
         st.text_area("Reply Content", value=reply_content, height=120, disabled=True)
-    
-    # Agent reasoning section
-    display_agent_reasoning(result)
-    
+
     # Timeline section
-    if result.timeline:
-        display_agent_timeline(result.timeline)
-    
+    timeline = getattr(result, 'timeline', None)
+    if timeline:
+        display_agent_timeline(timeline)
+
     # Response email section
-    if result.response_email:
-        st.markdown("### �� Generated Response")
-        display_email_output(result.response_email)
-    
-    # CRM update section
-    st.markdown("### 🗂️ CRM Update")
-    display_crm_record(lead_data, result, result.interactions, title="Updated Lead Record")
-    
+    response_email = getattr(result, 'response_email', None)
+    if response_email:
+        st.markdown("###  Generated Response")
+        display_email_output(response_email)
+
+    memory_manager = get_memory_manager()
+    qual_history = memory_manager.get_qualification_history(lead_id)
+    # Sort descending by created_at or updated_at
+    def get_sort_key(qual):
+        return qual.get('updated_at') or qual.get('created_at') or ''
+    qual_history = sorted(qual_history, key=get_sort_key, reverse=True)
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.markdown("### 👤 Lead Information")
+        st.markdown(f"**Name:** {lead_data.get('name', 'N/A')}")
+        st.markdown(f"**Email:** {lead_data.get('email', 'N/A')}")
+        st.markdown(f"**Company:** {lead_data.get('company', 'N/A')}")
+        st.markdown(f"**Role:** {lead_data.get('role', 'N/A')}")
+        st.markdown(f"**Phone:** {lead_data.get('phone', 'N/A')}")
+        st.markdown(f"**Source:** {lead_data.get('source', 'Contact Form')}")
+
+    with col2:
+        st.markdown("### 🕑 Qualification History")
+        if not qual_history:
+            st.info("No qualification history for this lead yet.")
+        else:
+            container_height = min(400, 120 * len(qual_history))
+            with st.container():
+                st.markdown(f"<div style='max-height:{container_height}px;overflow-y:auto;'>", unsafe_allow_html=True)
+                for idx, qual in enumerate(qual_history):
+                    score = qual.get('lead_score', 0)
+                    score_color = 'green' if score >= 80 else 'orange' if score >= 50 else 'red'
+                    priority = str(qual.get('priority', 'Unknown')).title()
+                    priority_emoji = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(priority, "⚪")
+                    status = str(qual.get('lead_disposition', 'Unknown')).title()
+                    next_action = qual.get('next_action', 'N/A')
+                    # Expander label: show score and next action
+                    expander_label = f"Score: {score}/100 | Next: {next_action}"
+                    with st.expander(expander_label, expanded=False):
+                        st.markdown(f"<div style='display:flex;align-items:center;gap:16px;padding:8px 0;'>"
+                                    f"<span style='font-weight:bold;color:{score_color};font-size:1.1em;'>Score: {score}/100</span>"
+                                    f"<span style='font-size:1.1em;'>{priority_emoji} {priority}</span>"
+                                    f"<span style='font-size:1.1em;'>Status: {status}</span>"
+                                    f"</div>", unsafe_allow_html=True)
+                        # Only show the reply analysis for this qualification/history item
+                        if qual.get('reasoning'):
+                            st.markdown(f"**Reasoning:** {qual['reasoning']}")
+                        if qual.get('next_action'):
+                            st.info(f"**Next Action:** {qual['next_action']}")
+                        if qual.get('urgency'):
+                            st.markdown(f"**Urgency:** {qual['urgency']}")
+                        if qual.get('sentiment'):
+                            st.markdown(f"**Sentiment:** {qual['sentiment']}")
+                        if qual.get('follow_up_timing'):
+                            st.markdown(f"**Follow-up Timing:** {qual['follow_up_timing']}")
+                        if qual.get('created_at'):
+                            st.caption(f"Created: {qual['created_at']}")
+                        if qual.get('updated_at'):
+                            st.caption(f"Updated: {qual['updated_at']}")
+                st.markdown("</div>", unsafe_allow_html=True)
+
     # Clear results button
     if st.button("🗑️ Clear Results", key="reply_clear_results_btn"):
         if hasattr(st.session_state, 'demo_results') and 'reply' in st.session_state.demo_results:
             st.session_state.demo_results['reply'] = {}
-        st.rerun() 
+        st.rerun()

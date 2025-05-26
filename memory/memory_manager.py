@@ -32,50 +32,46 @@ class MemoryManager:
         """Get all leads."""
         return self.store.execute_query("SELECT * FROM leads ORDER BY updated_at DESC")
     
+    def get_lead_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get lead information by email (unique per lead)."""
+        results = self.store.get_by_field("leads", "email", email)
+        return results[0] if results else None
+
+    def get_or_create_lead_id(self, email: str, lead_data: Dict[str, Any]) -> str:
+        """Return the lead_id for a given email, creating a new lead if not present."""
+        lead = self.get_lead_by_email(email)
+        if lead:
+            return lead["lead_id"]
+        # Create new lead_id (use a UUID for uniqueness)
+        import uuid
+        lead_id = f"lead_{uuid.uuid4().hex[:12]}"
+        data = lead_data.copy()
+        data["lead_id"] = lead_id
+        data["email"] = email
+        self.save_lead(lead_id, data)
+        return lead_id
+    
     # Qualification operations
     def save_qualification(self, lead_id: str, qualification_data: Dict[str, Any]) -> None:
-        """Save qualification results for a lead."""
+        """Save qualification results for a lead (always insert a new record)."""
         # Ensure lead exists
         if not self.get_lead(lead_id):
             self.save_lead(lead_id, {"name": "Unknown", "email": "unknown@example.com"})
-        
-        # Get existing qualification to update or create new
-        existing = self.get_latest_qualification(lead_id)
-        
-        if existing:
-            # Update existing qualification
-            data = existing.copy()
-            data.update(qualification_data)
-            data["updated_at"] = datetime.now().isoformat()
-            
-            self.store.execute_update(
-                "UPDATE lead_qualifications SET priority=?, lead_score=?, reasoning=?, next_action=?, "
-                "lead_disposition=?, disposition_confidence=?, sentiment=?, urgency=?, "
-                "last_reply_analysis=?, recommended_follow_up=?, follow_up_timing=?, updated_at=? "
-                "WHERE id=?",
-                (
-                    data.get("priority"), data.get("lead_score"), data.get("reasoning"),
-                    data.get("next_action"), data.get("lead_disposition"), data.get("disposition_confidence"),
-                    data.get("sentiment"), data.get("urgency"), data.get("last_reply_analysis"),
-                    data.get("recommended_follow_up"), data.get("follow_up_timing"),
-                    data["updated_at"], existing["id"]
-                )
+        now = datetime.now().isoformat()
+        self.store.execute_insert(
+            "INSERT INTO lead_qualifications (lead_id, priority, lead_score, reasoning, next_action, "
+            "lead_disposition, disposition_confidence, sentiment, urgency, last_reply_analysis, "
+            "recommended_follow_up, follow_up_timing, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                lead_id, qualification_data.get("priority"), qualification_data.get("lead_score"),
+                qualification_data.get("reasoning"), qualification_data.get("next_action"),
+                qualification_data.get("lead_disposition"), qualification_data.get("disposition_confidence"),
+                qualification_data.get("sentiment"), qualification_data.get("urgency"),
+                qualification_data.get("last_reply_analysis"), qualification_data.get("recommended_follow_up"),
+                qualification_data.get("follow_up_timing"),
+                now, now
             )
-        else:
-            # Create new qualification
-            self.store.execute_insert(
-                "INSERT INTO lead_qualifications (lead_id, priority, lead_score, reasoning, next_action, "
-                "lead_disposition, disposition_confidence, sentiment, urgency, last_reply_analysis, "
-                "recommended_follow_up, follow_up_timing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    lead_id, qualification_data.get("priority"), qualification_data.get("lead_score"),
-                    qualification_data.get("reasoning"), qualification_data.get("next_action"),
-                    qualification_data.get("lead_disposition"), qualification_data.get("disposition_confidence"),
-                    qualification_data.get("sentiment"), qualification_data.get("urgency"),
-                    qualification_data.get("last_reply_analysis"), qualification_data.get("recommended_follow_up"),
-                    qualification_data.get("follow_up_timing")
-                )
-            )
+        )
     
     def get_qualification(self, lead_id: str) -> Optional[Dict[str, Any]]:
         """Get the latest qualification for a lead."""
@@ -245,6 +241,14 @@ class MemoryManager:
     def clear_all_data(self) -> None:
         """Clear all data from the database (useful for testing)."""
         self.store.clear_all_data()
+
+    def get_qualification_history(self, lead_id: str) -> List[Dict[str, Any]]:
+        """Get all qualification records for a lead, ordered by updated_at ascending."""
+        records = self.store.get_by_field("lead_qualifications", "lead_id", lead_id)
+        # Sort by updated_at (or created_at if updated_at missing)
+        def get_sort_key(rec):
+            return rec.get("updated_at") or rec.get("created_at") or ""
+        return sorted(records, key=get_sort_key)
 
 
 # Global instance for backward compatibility
