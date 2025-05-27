@@ -1,5 +1,19 @@
 # Leads AI Agent Demo
 
+---
+
+## 🎥 Demo Video Walkthrough
+
+> **Watch:** [Loom Video Demo – See the AI Agent in Action! (Pt. I)](https://www.loom.com/share/e392b1d9eb504a9bb2c06e09bfc66c87)
+>
+> **Watch:** [Loom Video Demo – See the AI Agent in Action! (Pt. II)](https://www.loom.com/share/b8972614998c4748b36406b704bf0679)
+>
+> **Watch:** [Loom Video Demo – See the AI Agent in Action! (Pt. III)](https://www.loom.com/share/1a94ff2493d64d149ccd89592e7a89fe)
+>
+> In these series of videos, I walk through the full demo, showing how the AI agent automates lead qualification, follow-ups, meeting scheduling, and CRM updates. This is the fastest way to see the business value and impact in action.
+
+---
+
 ## What is This?
 
 This demo shows how an AI agent can automate the most time-consuming parts of lead generation and management for your business. It is designed for business owners and sales leaders who want to see, in a simple and interactive way, how AI can:
