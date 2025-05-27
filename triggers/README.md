@@ -1,3 +1,0 @@
-# Triggers
-
-Agentic triggers.
