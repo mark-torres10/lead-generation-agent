@@ -9,6 +9,7 @@ from ui.tabs.qualify_tab import render_qualify_tab
 from ui.tabs.reply_tab import render_reply_tab
 from ui.tabs.meeting_tab import render_meeting_tab
 from ui.tabs.discover_tab import render_discover_tab
+from ui.tabs.metrics_evals_tab import render_metrics_evals_tab
 
 # Import session state management
 from ui.state.session import initialize_session_state
@@ -38,11 +39,12 @@ def main():
     """)
     
     # Create tabs
-    tab0, tab1, tab2, tab3 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4 = st.tabs([
         "📝 Contact Form → Follow-up",
         "📧 Reply Analysis → Response",
         "📅 Meeting Scheduling",
-        "🔎 Discover New Leads"
+        "🔎 Discover New Leads",
+        "📊 Metrics and Evaluations"
     ])
     
     with tab0:
@@ -56,6 +58,9 @@ def main():
     
     with tab3:
         render_discover_tab()
+    
+    with tab4:
+        render_metrics_evals_tab()
     
     # Sidebar with additional information
     with st.sidebar:
